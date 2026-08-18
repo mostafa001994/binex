@@ -1,46 +1,38 @@
-name: Deploy Binex
+name: Build and Push Docker Image
 
 on:
   push:
     branches:
       - main
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.2.2
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            set -e
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-            cd /opt/binex
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-            echo "Updating source..."
-            git fetch origin main
-            git reset --hard origin/main
-
-            echo "Building Docker image..."
-            docker build --pull -t binex-next:latest .
-
-            echo "Stopping old container..."
-            docker stop binex-next || true
-
-            echo "Removing old container..."
-            docker rm binex-next || true
-
-            echo "Starting new container..."
-            docker run -d \
-              --name binex-next \
-              --restart unless-stopped \
-              --network proxy \
-              -p 3000:3000 \
-              binex-next:latest
-
-            echo "Deployment completed successfully."
+      - name: Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/mostafa001994/binex:latest
+            ghcr.io/mostafa001994/binex:${{ github.sha }}
 
