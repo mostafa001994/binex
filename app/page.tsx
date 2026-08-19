@@ -153,7 +153,7 @@ export default function Home() {
             </h1>
 
             <p className="mt-7 max-w-xl text-base leading-8 text-zinc-400 sm:text-lg">
-              Binex به کسب‌وکارها کمک می‌کند با ترکیب مدیریت حرفه‌ای، داده و
+              Binix به کسب‌وکارها کمک می‌کند با ترکیب مدیریت حرفه‌ای، داده و
               هوش مصنوعی، سریع‌تر تصمیم بگیرند، بهتر اجرا کنند و هوشمندانه‌تر
               رشد کنند.
             </p>
@@ -174,7 +174,7 @@ export default function Home() {
                 href="#services"
                 className="flex items-center justify-center rounded-full border border-white/10 px-7 py-4 text-sm text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.04]"
               >
-                خدمات Binex
+                خدمات Binix
               </a>
             </div>
           </motion.div>
@@ -193,7 +193,7 @@ export default function Home() {
                 <div className="rounded-[24px] border border-white/10 bg-[#080c12] p-5">
                   <div className="mb-6 flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-zinc-500">BINEX AI</p>
+                      <p className="text-xs text-zinc-500">Binix AI</p>
                       <p className="mt-1 font-bold">داشبورد مدیریتی</p>
                     </div>
 
@@ -311,7 +311,7 @@ export default function Home() {
         <SectionHeading
           eyebrow="SERVICES"
           title="مدیریت را هوشمندتر می‌کنیم."
-          text="از استراتژی تا اجرا، Binex در کنار شماست تا فناوری را به یک مزیت واقعی برای کسب‌وکارتان تبدیل کند."
+          text="از استراتژی تا اجرا، Binix در کنار شماست تا فناوری را به یک مزیت واقعی برای کسب‌وکارتان تبدیل کند."
         />
 
         <div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -366,7 +366,7 @@ export default function Home() {
               </h2>
 
               <p className="mt-6 max-w-xl text-sm leading-8 text-zinc-400">
-                ما فقط ابزارهای AI معرفی نمی‌کنیم. هدف Binex ساخت یک سیستم
+                ما فقط ابزارهای AI معرفی نمی‌کنیم. هدف Binix ساخت یک سیستم
                 مدیریتی است که داده‌ها را بفهمد، الگوها را شناسایی کند و به
                 مدیران در تصمیم‌گیری کمک کند.
               </p>
@@ -397,7 +397,7 @@ export default function Home() {
                       <BrainCircuit size={21} />
                     </div>
                     <div>
-                      <p className="text-sm font-bold">Binex Intelligence</p>
+                      <p className="text-sm font-bold">Binix Intelligence</p>
                       <p className="text-xs text-zinc-600">Active system</p>
                     </div>
                     <span className="mr-auto h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_#34d399]" />
@@ -487,12 +487,12 @@ export default function Home() {
             </h2>
 
             <p className="mx-auto mt-6 max-w-xl text-sm leading-7 text-zinc-500">
-              برای بررسی فرصت‌های همکاری و دریافت مشاوره اولیه با تیم Binex
+              برای بررسی فرصت‌های همکاری و دریافت مشاوره اولیه با تیم Binix
               در ارتباط باشید.
             </p>
 
             <a
-              href="mailto:hello@binex.ir"
+              href="mailto:hello@Binix.ir"
               className="mt-8 inline-flex items-center gap-3 rounded-full bg-white px-7 py-4 text-sm font-bold text-black transition hover:bg-cyan-300"
             >
               شروع یک گفت‌وگو
@@ -515,7 +515,7 @@ export default function Home() {
           </div>
 
           <p className="text-xs text-zinc-600">
-            © {new Date().getFullYear()} Binex. All rights reserved.
+            © {new Date().getFullYear()} Binix. All rights reserved.
           </p>
         </div>
       </footer>
