@@ -79,7 +79,7 @@ export default function Home() {
       {/* Navbar */}
       <nav className="relative z-50 mx-auto flex max-w-7xl items-center justify-between px-6 py-6 lg:px-8">
         <a href="#" className="text-2xl font-black tracking-[0.18em]">
-          BINEX<span className="text-cyan-400">.</span>
+          BINIX<span className="text-cyan-400">.</span>
         </a>
 
         <div className="hidden items-center gap-9 text-sm text-zinc-400 md:flex">
@@ -507,7 +507,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-7xl flex-col gap-5 px-6 py-8 sm:flex-row sm:items-center sm:justify-between lg:px-8">
           <div>
             <div className="text-xl font-black tracking-[0.18em]">
-              BINEX<span className="text-cyan-400">.</span>
+              BINIX<span className="text-cyan-400">.</span>
             </div>
             <p className="mt-2 text-xs text-zinc-600">
               Intelligent Management
