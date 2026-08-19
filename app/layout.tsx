@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Binex | مدیریت هوشمند با هوش مصنوعی",
+  title: "Binix | مدیریت هوشمند با هوش مصنوعی",
   description:
-    "Binex؛ ارائه‌دهنده راهکارهای مدیریت، اتوماسیون و هوش مصنوعی برای کسب‌وکارها",
+    "Binix؛ ارائه‌دهنده راهکارهای مدیریت، اتوماسیون و هوش مصنوعی برای کسب‌وکارها",
 };
 
 export default function RootLayout({
