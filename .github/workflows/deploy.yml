@@ -42,5 +42,9 @@ jobs:
       - name: Redeploy Stack
         run: |
           curl -f -X POST \
+            "${{ secrets.PORTAINER_URL }}/api/stacks/${{ secrets.PORTAINER_STACK_ID }}/stop?endpointId=${{ secrets.PORTAINER_ENDPOINT_ID }}" \
+            -H "X-API-Key: ${{ secrets.PORTAINER_API_TOKEN }}"
+
+          curl -f -X POST \
             "${{ secrets.PORTAINER_URL }}/api/stacks/${{ secrets.PORTAINER_STACK_ID }}/start?endpointId=${{ secrets.PORTAINER_ENDPOINT_ID }}" \
             -H "X-API-Key: ${{ secrets.PORTAINER_API_TOKEN }}"
