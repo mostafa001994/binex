@@ -49,3 +49,4 @@ jobs:
               "StackFileContent": "services:\n  binex-next:\n    image: ghcr.io/mostafa001994/binex:latest\n    container_name: binex-next\n    restart: unless-stopped\n    networks:\n      - proxy\n\nnetworks:\n  proxy:\n    external: true\n",
               "RepullImageAndRedeploy": true
             }'
+
