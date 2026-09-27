@@ -1,0 +1,9 @@
+# Delete these files after applying the patch:
+src/components/landing/testimonials.tsx
+src/components/data-analyzer/use-upload-flow.ts
+src/components/auth/auth-shell.tsx
+src/components/auth/auth-experience-shell.tsx
+
+# Keep these:
+src/hooks/use-upload-flow.ts
+src/constants/testimonials-data.ts

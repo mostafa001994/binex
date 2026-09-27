@@ -1,36 +1,124 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Binix
 
-## Getting Started
+Binix یک پلتفرم فارسی و RTL برای معرفی، فروش اشتراک، راه‌اندازی و مدیریت سرویس‌های هوشمند کسب‌وکار است. اجرای اصلی سرویس‌ها در n8n و کانال‌هایی مانند پیام‌رسان بله انجام می‌شود؛ وب‌سایت مسئول بازاریابی، ثبت درخواست، خرید و مدیریت سرویس است.
 
-First, run the development server:
+> وضعیت مستند: ۱۴۰۵/۰۶/۰۵ — این README بر اساس کد، Prisma schema و Docker فعلی پروژه نوشته شده است.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## وضعیت فعلی
+
+- صفحه اصلی و صفحه فروشنده هوشمند دارای مسیر واقعی ثبت درخواست هستند.
+- داده عملیاتی در حالت Docker به PostgreSQL متصل است.
+- پنل کاربر و پنل مدیریت، احراز هویت OTP، RBAC، کاتالوگ سرویس، پلن، اشتراک، سفارش، پرداخت، راه‌اندازی، تیکت، اعلان، Audit Log و درخواست‌های مشاوره در کد وجود دارند.
+- OTP واقعی پیامکی، درگاه پرداخت واقعی و worker اجرای jobهای n8n هنوز تکمیل نشده‌اند.
+- فروشنده هوشمند سرویس اول محصول است؛ رزرو نوبت، BI و تحلیل اکسل در نقشه راه بعدی قرار دارند.
+
+جزئیات دقیق وضعیت قابلیت‌ها: [docs/00-product/service-status.md](docs/00-product/service-status.md)
+
+## فناوری‌ها
+
+- Next.js 15 و React 19
+- TypeScript 5
+- Tailwind CSS 4
+- Prisma 7 و PostgreSQL 17
+- Docker Compose
+- Framer Motion، GSAP و Lucide Icons
+- Node.js 22
+
+## اجرای سریع
+
+### اجرای قابل‌حمل روی یک سیستم جدید
+
+این روش PostgreSQL، migration، seed و وب را بدون وابستگی به کانتینرهای قبلی اجرا می‌کند:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\bootstrap-portable.ps1
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+راهنمای کامل و روش ساخت ZIP امن: [docs/07-operations/portable-handoff.md](docs/07-operations/portable-handoff.md)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### حالت توسعه Mock
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm ci
+npm run dev
+```
 
-## Learn More
+آدرس پیش‌فرض: `http://localhost:4000`
 
-To learn more about Next.js, take a look at the following resources:
+این حالت برای توسعه UI مناسب است و به PostgreSQL نیاز ندارد. داده‌های Mock در `.binix/` نگهداری می‌شوند و نباید مبنای تست production باشند.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### حالت Docker با PostgreSQL
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+پیش‌نیازها:
 
-## Deploy on Vercel
+- Docker Desktop
+- شبکه خارجی `shared_postgres`
+- کانتینر PostgreSQL با نام DNS برابر `postgres`
+- فایل محلی `.env.docker`
+- migrationهای اعمال‌شده روی دیتابیس `binix`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```powershell
+$docker = "$env:LOCALAPPDATA\Programs\DockerDesktop\resources\bin\docker.exe"
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+$composeArgs = @(
+    "compose",
+    "-f", "compose.yaml",
+    "-f", "compose.postgres.yaml",
+    "--env-file", ".env.docker"
+)
+
+& $docker @composeArgs build web
+& $docker @composeArgs up -d --force-recreate web
+```
+
+بررسی سلامت:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:4000/api/v1/health"
+```
+
+خروجی سالم در محیط اصلی باید `dataDriver: database` داشته باشد.
+
+راهنمای کامل: [docs/07-operations/docker-runbook.md](docs/07-operations/docker-runbook.md)
+
+## دستورات کنترل کیفیت
+
+```bash
+npm run db:generate
+npm run typecheck
+npm test
+npm run lint
+npm run build
+```
+
+## نقشه مستندات
+
+- [راهنمای مستندات](docs/README.md)
+- [معرفی محصول](docs/00-product/product-overview.md)
+- [وضعیت سرویس‌ها و قابلیت‌ها](docs/00-product/service-status.md)
+- [معماری سیستم](docs/01-architecture/system-overview.md)
+- [مدل داده](docs/02-database/data-model.md)
+- [APIها](docs/03-backend/api-overview.md)
+- [احراز هویت و RBAC](docs/03-backend/authentication-and-rbac.md)
+- [اجرای Docker](docs/07-operations/docker-runbook.md)
+- [تحویل و اجرای قابل‌حمل](docs/07-operations/portable-handoff.md)
+- [استاندارد توسعه و تست](docs/08-development/testing-and-quality.md)
+- [تصمیم‌های معماری](docs/adr/README.md)
+
+## قواعد امنیتی
+
+- `.env.docker`، رمز دیتابیس، کلید رمزنگاری و توکن سرویس‌ها نباید commit یا در مستندات کپی شوند.
+- عملیات migration و seed ابتدا باید روی دیتابیس غیرproduction بررسی شوند.
+- سرویس‌های خارجی و n8n production در تست‌های محلی نباید تغییر داده شوند.
+- مقادیر نمایشی UI، داده واقعی کسب‌وکار محسوب نمی‌شوند.
+
+## منابع حقیقت
+
+در صورت اختلاف، اولویت منابع به‌ترتیب زیر است:
+
+1. قواعد و تصمیم‌های تأییدشده محصول
+2. Prisma schema و migrationهای اعمال‌شده
+3. قراردادهای backend و تست‌ها
+4. مستندات این پوشه
+5. متن‌های نمایشی UI

@@ -1,0 +1,364 @@
+import {
+  createHmac,
+  timingSafeEqual,
+} from "node:crypto";
+
+import { NextResponse } from "next/server";
+
+import {
+  ProvisioningJobStatus,
+} from "@/generated/prisma/client";
+import { getPrismaClient } from "@/server/db/prisma";
+import { decryptSecret } from "@/server/security/secret-crypto";
+
+export const runtime = "nodejs";
+
+const SALES_AGENT_SERVICE_ID = "sales-agent";
+const DEFAULT_INSTANCE_KEY = "default";
+const BALE_TOKEN_KIND = "bale_bot_token";
+const WOO_STORE_URL_KIND = "woocommerce_store_url";
+const WOO_CONSUMER_KEY_KIND = "woocommerce_consumer_key";
+const WOO_CONSUMER_SECRET_KIND = "woocommerce_consumer_secret";
+
+function jsonError(
+  message: string,
+  status: number,
+) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: message,
+    },
+    {
+      status,
+    },
+  );
+}
+
+function verifySignature(
+  rawBody: string,
+  signature: string | null,
+): boolean {
+  const secret =
+    process.env.N8N_WEBHOOK_SECRET;
+
+  if (!secret) {
+    throw new Error(
+      "N8N_WEBHOOK_SECRET is not configured.",
+    );
+  }
+
+  if (
+    !signature ||
+    !/^[a-f0-9]{64}$/i.test(signature)
+  ) {
+    return false;
+  }
+
+  const expected = createHmac(
+    "sha256",
+    secret,
+  )
+    .update(rawBody)
+    .digest("hex");
+
+  const providedBuffer = Buffer.from(
+    signature.toLowerCase(),
+    "hex",
+  );
+
+  const expectedBuffer = Buffer.from(
+    expected,
+    "hex",
+  );
+
+  return (
+    providedBuffer.length ===
+      expectedBuffer.length &&
+    timingSafeEqual(
+      providedBuffer,
+      expectedBuffer,
+    )
+  );
+}
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  );
+}
+
+export async function POST(
+  request: Request,
+) {
+  try {
+    const rawBody = await request.text();
+
+    const signature =
+      request.headers.get(
+        "x-binix-signature",
+      );
+
+    let body: unknown;
+
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return jsonError(
+        "Invalid JSON body.",
+        400,
+      );
+    }
+
+    if (
+      !body ||
+      typeof body !== "object"
+    ) {
+      return jsonError(
+        "Invalid request body.",
+        400,
+      );
+    }
+
+    const input = body as Record<
+      string,
+      unknown
+    >;
+
+    const provisioningJobId =
+      input.provisioningJobId;
+
+    if (!isUuid(provisioningJobId)) {
+      return jsonError(
+        "Invalid provisioningJobId.",
+        400,
+      );
+    }
+
+    // Sign a canonical value instead of the serialized HTTP body.
+    // This avoids transport/body-serialization differences between
+    // n8n and BINIX while still authenticating the requested job ID.
+    if (
+      !verifySignature(
+        provisioningJobId,
+        signature,
+      )
+    ) {
+      return jsonError(
+        "Invalid signature.",
+        401,
+      );
+    }
+
+    const prisma = getPrismaClient();
+
+    const job =
+      await prisma.provisioningJob.findUnique({
+        where: {
+          id: provisioningJobId,
+        },
+        select: {
+          id: true,
+          subscriptionId: true,
+          businessId: true,
+          serviceId: true,
+          action: true,
+          status: true,
+          payload: true,
+        },
+      });
+
+    if (!job) {
+      return jsonError(
+        "Provisioning job not found.",
+        404,
+      );
+    }
+
+    if (
+      job.serviceId !==
+      SALES_AGENT_SERVICE_ID
+    ) {
+      return jsonError(
+        "Unsupported service.",
+        403,
+      );
+    }
+
+    if (
+      job.status ===
+        ProvisioningJobStatus.SUCCEEDED ||
+      job.status ===
+        ProvisioningJobStatus.CANCELED
+    ) {
+      return jsonError(
+        "Provisioning job is no longer active.",
+        409,
+      );
+    }
+
+    const credentials =
+      await prisma.serviceCredential.findMany({
+        where: {
+          businessId: job.businessId,
+          serviceId:
+            SALES_AGENT_SERVICE_ID,
+          instanceKey:
+            DEFAULT_INSTANCE_KEY,
+          kind: {
+            in: [
+              BALE_TOKEN_KIND,
+              WOO_STORE_URL_KIND,
+              WOO_CONSUMER_KEY_KIND,
+              WOO_CONSUMER_SECRET_KIND,
+            ],
+          },
+        },
+        select: {
+          kind: true,
+          encryptedValue: true,
+        },
+      });
+
+    const bale =
+      credentials.find(
+        (item) =>
+          item.kind === BALE_TOKEN_KIND,
+      );
+
+    const wooStore =
+      credentials.find(
+        (item) =>
+          item.kind === WOO_STORE_URL_KIND,
+      );
+
+    const wooKey =
+      credentials.find(
+        (item) =>
+          item.kind === WOO_CONSUMER_KEY_KIND,
+      );
+
+    const wooSecret =
+      credentials.find(
+        (item) =>
+          item.kind === WOO_CONSUMER_SECRET_KIND,
+      );
+
+    const baleBotToken = bale
+      ? decryptSecret(
+          bale.encryptedValue,
+        )
+      : null;
+
+    const woocommerceStoreUrl =
+      wooStore
+        ? decryptSecret(
+            wooStore.encryptedValue,
+          )
+        : null;
+
+    const woocommerceConsumerKey =
+      wooKey
+        ? decryptSecret(
+            wooKey.encryptedValue,
+          )
+        : null;
+
+    const woocommerceConsumerSecret =
+      wooSecret
+        ? decryptSecret(
+            wooSecret.encryptedValue,
+          )
+        : null;
+
+    const jobPayload =
+      job.payload &&
+      typeof job.payload === "object" &&
+      !Array.isArray(job.payload)
+        ? job.payload as Record<string, unknown>
+        : {};
+
+    const requestedProvider =
+      jobPayload.provider === "bale" ||
+      jobPayload.provider === "woocommerce"
+        ? jobPayload.provider
+        : null;
+
+    const requestedOperation =
+      jobPayload.operation === "replace" ||
+      jobPayload.operation === "delete"
+        ? jobPayload.operation
+        : null;
+
+    const requestedSource =
+      typeof jobPayload.source === "string"
+        ? jobPayload.source
+        : null;
+
+    return NextResponse.json(
+      {
+        success: true,
+        contractVersion: "1",
+        requestContext: {
+          source: requestedSource,
+          provider: requestedProvider,
+          operation: requestedOperation,
+        },
+        provisioningJob: {
+          id: job.id,
+          subscriptionId:
+            job.subscriptionId,
+          businessId:
+            job.businessId,
+          serviceId:
+            job.serviceId,
+          action:
+            job.action.toLowerCase(),
+          status:
+            job.status.toLowerCase(),
+        },
+        credentials: {
+          bale: {
+            configured:
+              Boolean(baleBotToken),
+            token: baleBotToken,
+          },
+          woocommerce: {
+            configured: Boolean(
+              woocommerceStoreUrl &&
+              woocommerceConsumerKey &&
+              woocommerceConsumerSecret
+            ),
+            storeUrl:
+              woocommerceStoreUrl,
+            consumerKey:
+              woocommerceConsumerKey,
+            consumerSecret:
+              woocommerceConsumerSecret,
+          },
+        },
+      },
+      {
+        headers: {
+          "cache-control":
+            "no-store, max-age=0",
+        },
+      },
+    );
+  } catch (error) {
+    console.error(
+      "Provisioning config request failed:",
+      error instanceof Error
+        ? error.message
+        : "Unknown error",
+    );
+
+    return jsonError(
+      "Internal server error.",
+      500,
+    );
+  }
+}

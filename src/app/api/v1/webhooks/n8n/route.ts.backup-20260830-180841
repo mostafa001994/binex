@@ -1,0 +1,15 @@
+import { NextResponse } from "next/server";
+
+export async function POST(request: Request) {
+  const body = await request.json();
+
+  // TODO:
+  // 1. verify n8n signature
+  // 2. update ProvisioningJob
+  // 3. create audit record
+
+  return NextResponse.json({
+    received: true,
+    jobId: body.jobId ?? null,
+  });
+}

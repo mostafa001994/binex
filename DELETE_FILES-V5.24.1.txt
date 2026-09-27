@@ -1,0 +1,17 @@
+src/app/api/v1/sales-agent/bale/connect/route.ts
+src/app/api/v1/sales-agent/bale/disconnect/route.ts
+src/app/api/v1/sales-agent/conversations/[conversationId]/messages/route.ts
+src/app/api/v1/sales-agent/conversations/[conversationId]/route.ts
+src/app/api/v1/sales-agent/conversations/route.ts
+src/app/api/v1/sales-agent/knowledge/[knowledgeId]/route.ts
+src/app/api/v1/sales-agent/knowledge/route.ts
+src/app/api/v1/sales-agent/orders/[orderId]/route.ts
+src/app/api/v1/sales-agent/orders/route.ts
+src/app/api/v1/sales-agent/overview/route.ts
+src/app/api/v1/sales-agent/products/[productId]/route.ts
+src/app/api/v1/sales-agent/products/route.ts
+src/app/api/v1/sales-agent/settings/route.ts
+src/components/sales-agent/sales-agent-workflows.tsx
+src/lib/api-client/sales-agent-workflows.ts
+tests/sales-agent-backend.test.mjs
+tests/sales-agent-workflows.test.mjs

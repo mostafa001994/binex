@@ -1,0 +1,597 @@
+import { getSalesAgentRepository } from "@/server/repositories/repository-provider";
+import { decryptSecret } from "@/server/security/secret-crypto";
+
+import { createHmac } from "node:crypto";
+
+import {
+  AutomationConnectorStatus,
+  BusinessServiceStatus,
+  ProvisioningAction,
+  ProvisioningJobStatus,
+  ProvisioningStatus,
+} from "@/generated/prisma/client";
+
+import {
+  activateAutomationForProvisioningJob,
+  cancelAutomationForProvisioningJob,
+  suspendAutomationForProvisioningJob,
+} from "@/server/automation/automation-factory";
+import { getPrismaClient } from "@/server/db/prisma";
+
+export type ProvisioningDispatchPayload = {
+  contractVersion: "1";
+  event: "provisioning.requested";
+  timestamp: string;
+  data: {
+    provisioningJobId: string;
+    subscriptionId: string;
+    businessId: string;
+    serviceId: string;
+    action: "activate" | "update" | "suspend" | "cancel";
+  };
+};
+
+function normalizeContractVersion(value: string): "1" {
+  if (value === "v1" || value === "1") {
+    return "1";
+  }
+
+  throw new Error(
+    `Unsupported automation contract version: ${value}`,
+  );
+}
+
+function safeError(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.name === "AbortError") {
+      return "Automation connector request timed out.";
+    }
+
+    return error.message.slice(0, 2000);
+  }
+
+  return "Unknown automation connector error.";
+}
+
+
+
+async function verifySalesAgentCredentialJob(
+  job: {
+    businessId: string;
+    payload: unknown;
+  },
+) {
+  const payload =
+    job.payload &&
+    typeof job.payload === "object" &&
+    !Array.isArray(job.payload)
+      ? job.payload as Record<string, unknown>
+      : {};
+
+  const provider = payload.provider;
+
+  const credentials =
+    await getSalesAgentRepository()
+      .getCredentials(job.businessId);
+
+
+  if (provider === "bale") {
+
+    if (!credentials.baleBotTokenEncrypted) {
+      throw new Error(
+        "Bale token is missing.",
+      );
+    }
+
+
+    const token =
+      decryptSecret(
+        credentials.baleBotTokenEncrypted,
+      );
+
+
+    const response =
+      await fetch(
+        `https://tapi.bale.ai/bot${token}/getMe`,
+        {
+          method: "GET",
+        },
+      );
+
+
+    if (!response.ok) {
+      throw new Error(
+        "Bale token verification failed.",
+      );
+    }
+
+
+    return;
+  }
+
+
+
+  if (provider === "woocommerce") {
+
+    if (
+      !credentials.woocommerceStoreUrlEncrypted ||
+      !credentials.woocommerceConsumerKeyEncrypted ||
+      !credentials.woocommerceConsumerSecretEncrypted
+    ) {
+      throw new Error(
+        "WooCommerce credentials are incomplete.",
+      );
+    }
+
+
+    const storeUrl =
+      decryptSecret(
+        credentials.woocommerceStoreUrlEncrypted,
+      );
+
+    const consumerKey =
+      decryptSecret(
+        credentials.woocommerceConsumerKeyEncrypted,
+      );
+
+    const consumerSecret =
+      decryptSecret(
+        credentials.woocommerceConsumerSecretEncrypted,
+      );
+
+
+    const url =
+      `${storeUrl}/wp-json/wc/v3/system_status`;
+
+
+    const auth =
+      Buffer.from(
+        `${consumerKey}:${consumerSecret}`,
+      ).toString("base64");
+
+
+    const response =
+      await fetch(
+        url,
+        {
+          headers:{
+            Authorization:
+              `Basic ${auth}`,
+          },
+        },
+      );
+
+
+    if (!response.ok) {
+      throw new Error(
+        "WooCommerce connection verification failed.",
+      );
+    }
+
+
+    return;
+  }
+
+
+  throw new Error(
+    "Unsupported sales-agent provider.",
+  );
+}
+
+
+async function markDispatchFailed(
+  provisioningJobId: string,
+  message: string,
+) {
+  const prisma = getPrismaClient();
+
+  await prisma.$transaction(async (tx) => {
+    const job = await tx.provisioningJob.findUnique({
+      where: {
+        id: provisioningJobId,
+      },
+
+select: {
+  id: true,
+  subscriptionId: true,
+  status: true,
+  payload: true,
+},
+
+    });
+
+    if (!job) {
+      return;
+    }
+
+
+const payload =
+  job.payload &&
+  typeof job.payload === "object" &&
+  !Array.isArray(job.payload)
+    ? job.payload as Record<string, unknown>
+    : {};
+
+const isCredentialVerification =
+  payload.source === "customer-credential";
+
+
+    await tx.provisioningJob.update({
+      where: {
+        id: job.id,
+      },
+      data: {
+        status: ProvisioningJobStatus.FAILED,
+        attemptCount: {
+          increment: 1,
+        },
+        lastError: message,
+        lockedAt: null,
+        nextAttemptAt: null,
+        completedAt: new Date(),
+      },
+    });
+
+if (!isCredentialVerification) {
+  await tx.subscription.update({
+    where: {
+      id: job.subscriptionId,
+    },
+    data: {
+      provisioningStatus: ProvisioningStatus.FAILED,
+    },
+  });
+}
+
+
+  });
+}
+
+async function markFactoryProcessing(
+  provisioningJobId: string,
+): Promise<boolean> {
+  const prisma = getPrismaClient();
+
+  return prisma.$transaction(async (tx) => {
+    const job = await tx.provisioningJob.findUnique({
+      where: {
+        id: provisioningJobId,
+      },
+      select: {
+        id: true,
+        subscriptionId: true,
+        status: true,
+      },
+    });
+
+    if (!job) {
+      throw new Error(
+        `Provisioning job ${provisioningJobId} was not found.`,
+      );
+    }
+
+    if (job.status === ProvisioningJobStatus.SUCCEEDED) {
+      return false;
+    }
+
+    if (job.status === ProvisioningJobStatus.CANCELED) {
+      return false;
+    }
+
+    await tx.provisioningJob.update({
+      where: {
+        id: job.id,
+      },
+      data: {
+        status: ProvisioningJobStatus.PROCESSING,
+        lockedAt: new Date(),
+        nextAttemptAt: null,
+        completedAt: null,
+        lastError: null,
+      },
+    });
+
+    await tx.subscription.update({
+      where: {
+        id: job.subscriptionId,
+      },
+      data: {
+        provisioningStatus: ProvisioningStatus.IN_PROGRESS,
+      },
+    });
+
+    return true;
+  });
+}
+
+async function markFactorySucceeded(
+  provisioningJobId: string,
+): Promise<void> {
+  const prisma = getPrismaClient();
+
+  await prisma.$transaction(async (tx) => {
+    const job = await tx.provisioningJob.findUnique({
+      where: {
+        id: provisioningJobId,
+      },
+      select: {
+        id: true,
+        subscriptionId: true,
+        status: true,
+      },
+    });
+
+    if (!job) {
+      return;
+    }
+
+    if (job.status === ProvisioningJobStatus.CANCELED) {
+      return;
+    }
+
+    await tx.provisioningJob.update({
+      where: {
+        id: job.id,
+      },
+      data: {
+        status: ProvisioningJobStatus.SUCCEEDED,
+        lastError: null,
+        lockedAt: null,
+        nextAttemptAt: null,
+        completedAt: new Date(),
+      },
+    });
+
+    await tx.subscription.update({
+      where: {
+        id: job.subscriptionId,
+      },
+      data: {
+        provisioningStatus: ProvisioningStatus.READY,
+      },
+    });
+  });
+}
+
+export async function dispatchProvisioningJob(
+  provisioningJobId: string,
+): Promise<void> {
+  const prisma = getPrismaClient();
+
+  try {
+    const job = await prisma.provisioningJob.findUnique({
+      where: {
+        id: provisioningJobId,
+      },
+    });
+
+    if (!job) {
+      throw new Error(
+        `Provisioning job ${provisioningJobId} was not found.`,
+      );
+    }
+
+
+if (
+  job.serviceId === "sales-agent" &&
+  job.action === ProvisioningAction.UPDATE
+) {
+
+  try {
+
+    await verifySalesAgentCredentialJob(
+      job,
+    );
+
+
+    await prisma.provisioningJob.update({
+      where:{
+        id: job.id,
+      },
+      data:{
+        status:
+          ProvisioningJobStatus.SUCCEEDED,
+        completedAt:
+          new Date(),
+        lastError:
+          null,
+      },
+    });
+
+
+  } catch(error) {
+
+    await markDispatchFailed(
+      job.id,
+      safeError(error),
+    );
+
+    throw error;
+  }
+
+
+  return;
+}
+
+    // Runtime Automation Factory owns customer workflow creation.
+    //
+    // Credential-validation UPDATE jobs intentionally keep using the
+    // provisioning connector below. Saving customer credentials must not
+    // clone or replace the runtime workflow.
+
+
+
+if (
+  job.serviceId === "sales-agent" &&
+  job.action === ProvisioningAction.UPDATE
+) {
+  const payload =
+    job.payload &&
+    typeof job.payload === "object" &&
+    !Array.isArray(job.payload)
+      ? job.payload as Record<string, unknown>
+      : {};
+
+  if (
+    payload.source === "customer-credential"
+  ) {
+    await markFactoryProcessing(job.id);
+
+    await markFactorySucceeded(job.id);
+
+    return;
+  }
+}
+
+
+
+
+    if (
+      job.serviceId === "sales-agent" &&
+      (
+        job.action === ProvisioningAction.ACTIVATE ||
+        job.action === ProvisioningAction.SUSPEND ||
+        job.action === ProvisioningAction.CANCEL
+      )
+    ) {
+      const shouldRun =
+        await markFactoryProcessing(job.id);
+
+      if (!shouldRun) {
+        return;
+      }
+
+      if (
+        job.action === ProvisioningAction.ACTIVATE
+      ) {
+        await activateAutomationForProvisioningJob(
+          job.id,
+        );
+      } else if (
+        job.action === ProvisioningAction.SUSPEND
+      ) {
+        await suspendAutomationForProvisioningJob(
+          job.id,
+        );
+      } else {
+        await cancelAutomationForProvisioningJob(
+          job.id,
+        );
+      }
+
+      await markFactorySucceeded(
+        job.id,
+      );
+
+await prisma.businessService.update({
+  where: {
+    businessId_serviceId: {
+      businessId: job.businessId,
+      serviceId: job.serviceId,
+    },
+  },
+  data: {
+    status: BusinessServiceStatus.ACTIVE,
+    setupCompleted: true,
+  },
+});
+
+      return;
+    }
+
+    const connector =
+      await prisma.automationConnector.findUnique({
+        where: {
+          serviceId: job.serviceId,
+        },
+      });
+
+    if (
+      !connector ||
+      connector.status !== AutomationConnectorStatus.ACTIVE ||
+      !connector.endpointEncrypted
+    ) {
+      throw new Error(
+        `Active automation connector is not configured for service ${job.serviceId}.`,
+      );
+    }
+
+    const endpoint = decryptSecret(
+      connector.endpointEncrypted,
+    );
+
+    const authSecret = connector.authSecretEncrypted
+      ? decryptSecret(connector.authSecretEncrypted)
+      : null;
+
+    const action = job.action.toLowerCase() as
+      | "activate"
+      | "update"
+      | "suspend"
+      | "cancel";
+
+    const payload: ProvisioningDispatchPayload = {
+      contractVersion: normalizeContractVersion(
+        connector.contractVersion,
+      ),
+      event: "provisioning.requested",
+      timestamp: new Date().toISOString(),
+      data: {
+        provisioningJobId: job.id,
+        subscriptionId: job.subscriptionId,
+        businessId: job.businessId,
+        serviceId: job.serviceId,
+        action,
+      },
+    };
+
+    const rawBody = JSON.stringify(payload);
+
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+
+    if (authSecret) {
+      headers["x-binix-signature"] = createHmac(
+        "sha256",
+        authSecret,
+      )
+        .update(rawBody)
+        .digest("hex");
+    }
+
+    const controller = new AbortController();
+
+    const timeout = setTimeout(
+      () => controller.abort(),
+      connector.timeoutSeconds * 1000,
+    );
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: rawBody,
+        signal: controller.signal,
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Automation connector returned HTTP ${response.status}.`,
+        );
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch (error) {
+    const message = safeError(error);
+
+    await markDispatchFailed(
+      provisioningJobId,
+      message,
+    );
+
+    throw error;
+  }
+}

@@ -1,0 +1,36 @@
+/* Binix font mappings.
+   Licensed font files live inside /public/font. */
+
+@font-face {
+  font-family: "Vazir";
+  src: url("/font/Vazir.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Vazir";
+  src: url("/font/Vazir-Medium.woff2") format("woff2");
+  font-weight: 500 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Vazir";
+  src: url("/font/Vazir-Bold.woff2") format("woff2");
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Morabba";
+  src:
+    url("/font/MorabbaVF.woff2") format("woff2"),
+    url("/font/MorabbaVF.woff") format("woff");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}

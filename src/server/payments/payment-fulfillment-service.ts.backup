@@ -1,0 +1,177 @@
+import {
+  ProvisioningAction,
+  ProvisioningStatus,
+  SubscriptionStatus,
+} from "@/generated/prisma/client";
+
+import { dispatchProvisioningJob } from "@/server/automation/provisioning-dispatcher";
+import { getPrismaClient } from "@/server/db/prisma";
+
+
+export async function fulfillPaidOrder(orderId:string){
+
+ const prisma=getPrismaClient();
+
+
+ const result =
+ await prisma.$transaction(async(tx)=>{
+
+
+  const order =
+  await tx.order.findUnique({
+
+   where:{
+    id:orderId,
+   },
+
+   include:{
+    items:true,
+   },
+
+  });
+
+
+  if(!order)
+    throw new Error("Order not found");
+
+
+
+  const createdJobs:string[]=[];
+
+
+
+  for(const item of order.items){
+
+
+   if(item.type !== "NEW_SUBSCRIPTION")
+    continue;
+
+
+
+   const subscription =
+   await tx.subscription.create({
+
+    data:{
+
+
+     businessId:
+       order.businessId,
+
+
+     serviceId:
+       item.serviceId,
+
+
+     planId:
+       item.planId,
+
+
+     status:
+       SubscriptionStatus.ACTIVE,
+
+
+     provisioningStatus:
+       ProvisioningStatus.QUEUED,
+
+
+     priceAmount:
+       item.unitAmount,
+
+
+     currency:
+       order.currency,
+
+
+     billingPeriod:
+       item.billingPeriodSnapshot,
+
+
+     planNameSnapshot:
+       item.planNameSnapshot,
+
+
+     planCodeSnapshot:
+       item.planCodeSnapshot,
+
+
+     currentPeriodStartsAt:
+       new Date(),
+
+    },
+
+
+   });
+
+
+
+   const job =
+   await tx.provisioningJob.create({
+
+    data:{
+
+
+     subscriptionId:
+       subscription.id,
+
+
+     businessId:
+       order.businessId,
+
+
+     serviceId:
+       item.serviceId,
+
+
+     action:
+       ProvisioningAction.ACTIVATE,
+
+
+     idempotencyKey:
+       `payment:${order.id}:${subscription.id}`,
+
+
+     payload:{
+       source:"payment",
+       orderId,
+     },
+
+
+    },
+
+   });
+
+
+   createdJobs.push(job.id);
+
+
+   await tx.orderItem.update({
+
+    where:{
+     id:item.id,
+    },
+
+    data:{
+     subscriptionId:
+       subscription.id,
+    },
+
+   });
+
+
+  }
+
+
+  return createdJobs;
+
+
+ });
+
+
+ for(const jobId of result){
+
+   await dispatchProvisioningJob(jobId);
+
+ }
+
+
+}

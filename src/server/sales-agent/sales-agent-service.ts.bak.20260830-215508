@@ -1,0 +1,151 @@
+import type { AuthUser } from "@/server/auth/auth-types";
+import { getCurrentBusinessContext } from "@/server/business/business-service";
+import {
+  ForbiddenApiError,
+  ValidationApiError,
+} from "@/server/core/api-error";
+import { getSalesAgentRepository } from "@/server/repositories/repository-provider";
+import { encryptSecret } from "@/server/security/secret-crypto";
+import type {
+  SalesAgentCredentialStatus,
+  SalesAgentCredentials,
+} from "@/server/sales-agent/sales-agent-types";
+
+async function getBusinessId(user: AuthUser) {
+  const businessContext = await getCurrentBusinessContext(user);
+  const service = businessContext.services.find(
+    (item) => item.serviceId === "sales-agent",
+  );
+
+  if (!service) {
+    throw new ForbiddenApiError(
+      "فروشنده هوشمند برای این کسب‌وکار فعال نشده است.",
+    );
+  }
+
+  if (
+    service.status === "paused" ||
+    service.status === "coming-soon"
+  ) {
+    throw new ForbiddenApiError(
+      "فروشنده هوشمند در حال حاضر قابل استفاده نیست.",
+    );
+  }
+
+  return businessContext.business.id;
+}
+
+function normalizeToken(
+  value: unknown,
+  label: string,
+): string {
+  if (typeof value !== "string") {
+    throw new ValidationApiError(`${label} معتبر نیست.`);
+  }
+
+  const token = value.trim();
+
+  if (token.length < 8) {
+    throw new ValidationApiError(
+      `${label} باید حداقل ۸ کاراکتر باشد.`,
+    );
+  }
+
+  if (token.length > 2048) {
+    throw new ValidationApiError(
+      `${label} بیش از حد طولانی است.`,
+    );
+  }
+
+  return token;
+}
+
+function maskConfigured(configured: boolean) {
+  return configured ? "••••••••••••" : null;
+}
+
+function toStatus(
+  credentials: SalesAgentCredentials,
+): SalesAgentCredentialStatus {
+  const baleConfigured = Boolean(
+    credentials.baleBotTokenEncrypted,
+  );
+  const wooConfigured = Boolean(
+    credentials.woocommerceTokenEncrypted,
+  );
+
+  return {
+    baleBotTokenConfigured: baleConfigured,
+    woocommerceTokenConfigured: wooConfigured,
+    baleBotTokenMasked: maskConfigured(baleConfigured),
+    woocommerceTokenMasked: maskConfigured(wooConfigured),
+    updatedAt: credentials.updatedAt,
+  };
+}
+
+export async function getSalesAgentCredentialStatus(
+  user: AuthUser,
+) {
+  const businessId = await getBusinessId(user);
+  const credentials =
+    await getSalesAgentRepository().getCredentials(businessId);
+
+  return toStatus(credentials);
+}
+
+export async function replaceSalesAgentCredential(
+  user: AuthUser,
+  body: Record<string, unknown>,
+) {
+  const businessId = await getBusinessId(user);
+
+  const provider = body.provider;
+
+  if (provider !== "bale" && provider !== "woocommerce") {
+    throw new ValidationApiError(
+      "نوع توکن معتبر نیست.",
+    );
+  }
+
+  const token = normalizeToken(
+    body.token,
+    provider === "bale"
+      ? "توکن بات بله"
+      : "توکن ووکامرس",
+  );
+
+  const encrypted = encryptSecret(token);
+
+  const credentials =
+    await getSalesAgentRepository().updateCredentials(
+      businessId,
+      provider === "bale"
+        ? { baleBotTokenEncrypted: encrypted }
+        : { woocommerceTokenEncrypted: encrypted },
+    );
+
+  return toStatus(credentials);
+}
+
+export async function deleteSalesAgentCredential(
+  user: AuthUser,
+  provider: string,
+) {
+  const businessId = await getBusinessId(user);
+
+  if (provider !== "bale" && provider !== "woocommerce") {
+    throw new ValidationApiError(
+      "نوع توکن معتبر نیست.",
+    );
+  }
+
+  const credentials =
+    await getSalesAgentRepository().updateCredentials(
+      businessId,
+      provider === "bale"
+        ? { baleBotTokenEncrypted: null }
+        : { woocommerceTokenEncrypted: null },
+    );
+
+  return toStatus(credentials);
+}

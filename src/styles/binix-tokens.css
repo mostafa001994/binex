@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+/*
+  Binix Design Tokens — Tailwind CSS v4-ready.
+  Font files are intentionally NOT bundled.
+  Load your own Vazir and Morabba font files in the project.
+*/
+
+:root {
+  --font-vazir: "Vazir", "Vazirmatn", system-ui, sans-serif;
+  --font-morabba: "Morabba", "Vazir", "Vazirmatn", system-ui, sans-serif;
+
+  --background: #F6F9FC;
+  --surface: #FFFFFF;
+  --surface-muted: #F8FAFC;
+  --surface-raised: #EFF4F9;
+  --surface-hover: #F1F6FA;
+
+  --foreground: #071426;
+  --foreground-muted: #53657B;
+  --foreground-subtle: #7B8B9E;
+  --foreground-disabled: #A7B0BC;
+
+  --border: rgba(15, 36, 60, 0.11);
+  --border-subtle: rgba(15, 36, 60, 0.06);
+  --border-strong: rgba(15, 36, 60, 0.18);
+
+  --primary: #067BE8;
+  --primary-hover: #056DD0;
+  --accent: #00ADB9;
+
+  --success: #22C984;
+  --warning: #F6B73C;
+  --error: #F05B67;
+  --info: #3A9DFF;
+
+  --state-demo: #F6B73C;
+  --state-setup: #F6B73C;
+  --state-ready: #22C984;
+  --state-attention: #F05B67;
+
+
+  /* Marketing semantic tokens */
+  --marketing-background: #040812;
+  --marketing-surface: #07111F;
+  --marketing-surface-muted: #091522;
+  --marketing-surface-raised: #0B1B2C;
+  --marketing-text: #F5F8FF;
+  --marketing-text-muted: #AFC8DC;
+  --marketing-text-subtle: #7893A9;
+  --marketing-border: rgba(255, 255, 255, 0.08);
+  --marketing-border-strong: rgba(96, 207, 255, 0.18);
+
+  /* Dynamic service theme defaults. Override on a ServiceTheme wrapper. */
+  --service-accent: #078BFF;
+  --service-accent-secondary: #00D5E8;
+  --service-accent-rgb: 7 139 255;
+  --service-accent-soft: rgb(var(--service-accent-rgb) / 0.10);
+  --service-accent-softer: rgb(var(--service-accent-rgb) / 0.06);
+  --service-accent-border: rgb(var(--service-accent-rgb) / 0.22);
+  --service-accent-glow: 0 0 30px rgb(var(--service-accent-rgb) / 0.18);
+
+  --radius-control: 10px;
+  --radius-card: 14px;
+  --radius-panel: 18px;
+
+  --shadow-sm: 0 2px 10px rgba(12, 32, 58, 0.06);
+  --shadow-md: 0 8px 28px rgba(12, 32, 58, 0.10);
+  --shadow-lg: 0 20px 50px rgba(12, 32, 58, 0.13);
+
+  --glow-sm: 0 0 16px rgba(0, 173, 185, 0.16);
+  --glow-md: 0 0 28px rgba(6, 123, 232, 0.18);
+
+  color-scheme: light;
+}
+
+.dark {
+  --background: #020817;
+  --surface: #06111F;
+  --surface-muted: #081727;
+  --surface-raised: #0B1D31;
+  --surface-hover: #0D2239;
+
+  --foreground: #F5F9FF;
+  --foreground-muted: #A7B5C8;
+  --foreground-subtle: #708197;
+  --foreground-disabled: #4D5C70;
+
+  --border: rgba(148, 183, 220, 0.16);
+  --border-subtle: rgba(148, 183, 220, 0.10);
+  --border-strong: rgba(148, 183, 220, 0.28);
+
+  --primary: #078BFF;
+  --primary-hover: #159AFF;
+  --accent: #00D5E8;
+
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.24);
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.30);
+
+  --glow-sm: 0 0 16px rgba(0, 213, 232, 0.18);
+  --glow-md: 0 0 28px rgba(7, 139, 255, 0.22);
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-ui: var(--font-vazir);
+  --font-display: var(--font-morabba);
+
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-hover: var(--surface-hover);
+
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-foreground-disabled: var(--foreground-disabled);
+
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-accent: var(--accent);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-info: var(--info);
+
+
+  --color-marketing-background: var(--marketing-background);
+  --color-marketing-surface: var(--marketing-surface);
+  --color-marketing-surface-muted: var(--marketing-surface-muted);
+  --color-marketing-surface-raised: var(--marketing-surface-raised);
+  --color-marketing-text: var(--marketing-text);
+  --color-marketing-text-muted: var(--marketing-text-muted);
+  --color-marketing-text-subtle: var(--marketing-text-subtle);
+  --color-marketing-border: var(--marketing-border);
+  --color-marketing-border-strong: var(--marketing-border-strong);
+
+  --color-service-accent: var(--service-accent);
+  --color-service-accent-secondary: var(--service-accent-secondary);
+
+  --radius-control: var(--radius-control);
+  --radius-card: var(--radius-card);
+  --radius-panel: var(--radius-panel);
+
+  --shadow-binix-sm: var(--shadow-sm);
+  --shadow-binix-md: var(--shadow-md);
+  --shadow-binix-lg: var(--shadow-lg);
+  --shadow-glow-sm: var(--glow-sm);
+  --shadow-glow-md: var(--glow-md);
+}

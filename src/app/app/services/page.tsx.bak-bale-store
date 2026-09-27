@@ -1,0 +1,154 @@
+"use client";
+
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Layers3, RefreshCw, Settings2 } from "lucide-react";
+import { iconRegistry } from "@/constants/icon-registry";
+import { AppPage } from "@/components/app/app-page";
+import { PageHeader } from "@/components/shell/page-header";
+import { Badge } from "@/components/ui/badge";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { getServicesApi, type ServiceApiAccess, type ServiceApiItem } from "@/lib/api-client/services";
+
+export default function ServicesPage() {
+  const [snapshot, setSnapshot] = useState<{ services: ServiceApiItem[]; access: ServiceApiAccess } | null>(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(() => {
+    setError("");
+    setSnapshot(null);
+    getServicesApi()
+      .then(setSnapshot)
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "سرویس‌ها قابل دریافت نیستند."));
+  }, []);
+
+  useEffect(() => load(), [load]);
+
+  if (error) {
+    return (
+      <AppPage>
+        <Card className="text-center">
+          <Layers3 size={22} className="mx-auto text-error" />
+          <h1 data-display-title="true" className="mt-4 text-xl font-bold">دریافت سرویس‌ها انجام نشد</h1>
+          <p className="mt-2 font-ui text-sm text-foreground-muted">{error}</p>
+          <Button className="mt-5" variant="secondary" leadingIcon={<RefreshCw size={15} />} onClick={load}>تلاش دوباره</Button>
+        </Card>
+      </AppPage>
+    );
+  }
+
+  if (!snapshot) return <ServicesSkeleton />;
+
+  const { services, access } = snapshot;
+  const enabled = services.filter((service) => service.businessServiceId !== null);
+  const other = services.filter((service) => service.businessServiceId === null);
+  const ready = enabled.filter((service) => service.journey.status === "ready");
+  const needsAttention = enabled.filter((service) =>
+    ["setup-required", "payment-required", "setup-failed"].includes(service.journey.status),
+  );
+
+  return (
+    <AppPage width="wide">
+      <PageHeader
+        title="سرویس‌های من"
+        description="دسترسی‌ها، وضعیت راه‌اندازی و اقدام بعدی هر سرویس برای کسب‌وکار فعلی."
+        actions={<ButtonLink href="/#products" variant="secondary" leadingIcon={<ArrowLeft size={15} />}>مشاهده راهکارها</ButtonLink>}
+      />
+
+      <section className="grid gap-4 sm:grid-cols-3">
+        <Summary icon={<Layers3 size={17} />} label="متصل به کسب‌وکار" value={enabled.length.toLocaleString("fa-IR")} />
+        <Summary icon={<CheckCircle2 size={17} />} label="آماده استفاده" value={ready.length.toLocaleString("fa-IR")} />
+        <Summary icon={<AlertTriangle size={17} />} label="نیازمند اقدام" value={needsAttention.length.toLocaleString("fa-IR")} attention={needsAttention.length > 0} />
+      </section>
+
+      <section>
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 data-display-title="true" className="text-xl font-bold">سرویس‌های کسب‌وکار</h2>
+            <p className="mt-1 font-ui text-sm text-foreground-muted">وضعیت‌ها از دسترسی سرویس و چرخه راه‌اندازی واقعی محاسبه می‌شوند.</p>
+          </div>
+          <Badge>{access.role === "owner" ? "دسترسی مالک" : "دسترسی عضو"}</Badge>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {enabled.length > 0 ? enabled.map((service) => <ServiceApiCard key={service.id} service={service} />) : (
+            <Card className="text-center sm:col-span-2 xl:col-span-3">
+              <Layers3 size={24} className="mx-auto text-primary" />
+              <h3 className="mt-4 font-ui text-base font-semibold text-foreground">هنوز سرویسی به این کسب‌وکار متصل نشده است</h3>
+              <p className="mt-2 font-ui text-sm text-foreground-muted">پس از خرید یا تخصیص سرویس، وضعیت راه‌اندازی آن در همین بخش نمایش داده می‌شود.</p>
+            </Card>
+          )}
+        </div>
+      </section>
+
+      {other.length > 0 && (
+        <section>
+          <div className="mb-4">
+            <h2 data-display-title="true" className="text-xl font-bold">راهکارهای دیگر Binix</h2>
+            <p className="mt-1 font-ui text-sm text-foreground-muted">سرویس‌هایی که هنوز برای این کسب‌وکار فعال نشده‌اند.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {other.map((service) => <ServiceApiCard key={service.id} service={service} />)}
+          </div>
+        </section>
+      )}
+    </AppPage>
+  );
+}
+
+function ServiceApiCard({ service }: { service: ServiceApiItem }) {
+  const Icon = iconRegistry[service.iconKey] ?? iconRegistry["layout-grid"];
+  const action = service.journey.nextAction;
+
+  return (
+    <Card className="flex h-full flex-col transition hover:border-border-strong">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex size-10 items-center justify-center rounded-card border" style={{ color: service.accent, borderColor: `color-mix(in srgb, ${service.accent} 22%, transparent)`, background: `color-mix(in srgb, ${service.accent} 9%, transparent)` }}>
+          <Icon size={18} />
+        </div>
+        <JourneyBadge status={service.journey.status} label={service.journey.label} />
+      </div>
+      <div className="mt-4 font-ui text-xs text-foreground-subtle">{service.category}</div>
+      <h3 data-display-title="true" className="mt-1 text-lg font-bold">{service.name}</h3>
+      <p className="mt-2 font-ui text-sm leading-7 text-foreground-muted">{service.journey.description}</p>
+      <div className="mt-auto border-t border-border-subtle pt-4">
+        {action.href ? (
+          <ButtonLink href={action.href} variant={service.businessServiceId ? "primary" : "secondary"} className="w-full" leadingIcon={action.kind === "open-service" ? <Settings2 size={15} /> : <ArrowLeft size={15} />}>
+            {action.label}
+          </ButtonLink>
+        ) : (
+          <div className="flex h-10 items-center justify-center rounded-control border border-border-subtle bg-surface-raised font-ui text-sm text-foreground-muted">{action.label}</div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function JourneyBadge({ status, label }: { status: ServiceApiItem["journey"]["status"]; label: string }) {
+  if (status === "ready") return <Badge variant="success">{label}</Badge>;
+  if (["setup-required", "awaiting-activation", "provisioning"].includes(status)) return <Badge variant="warning">{label}</Badge>;
+  if (["payment-required", "setup-failed", "paused"].includes(status)) return <Badge variant="error">{label}</Badge>;
+  return <Badge>{label}</Badge>;
+}
+
+function Summary({ icon, label, value, attention = false }: { icon: ReactNode; label: string; value: string; attention?: boolean }) {
+  return (
+    <div className="rounded-card border border-border bg-surface p-4">
+      <div className={`flex items-center gap-2 ${attention ? "text-warning" : "text-primary"}`}>
+        {icon}<span className="font-ui text-xs text-foreground-muted">{label}</span>
+      </div>
+      <div className="mt-3 font-ui text-lg font-bold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function ServicesSkeleton() {
+  return (
+    <AppPage width="wide">
+      <div className="h-24 animate-pulse rounded-card bg-surface-raised" />
+      <div className="grid gap-4 sm:grid-cols-3">{[0, 1, 2].map((item) => <div key={item} className="h-24 animate-pulse rounded-card bg-surface-raised" />)}</div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((item) => <div key={item} className="h-64 animate-pulse rounded-card bg-surface-raised" />)}</div>
+    </AppPage>
+  );
+}

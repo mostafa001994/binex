@@ -1,0 +1,27 @@
+name: binix
+
+services:
+  web:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    env_file:
+      - .env.portable
+    environment:
+      BINIX_DATA_DRIVER: database
+      BINIX_OTP_DRIVER: mock
+    ports:
+      - "127.0.0.1:4000:3000"
+    volumes:
+      - binix_mock_data:/app/.binix
+      - binix_leads_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/v1/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  binix_mock_data:
+  binix_leads_data:

@@ -1,0 +1,80 @@
+name: binix-portable
+
+services:
+  database:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${BINIX_DB_NAME:-binix}
+      POSTGRES_USER: ${BINIX_DB_USER:-binix}
+      POSTGRES_PASSWORD: ${BINIX_DB_PASSWORD:?BINIX_DB_PASSWORD is required}
+      TZ: UTC
+    ports:
+      - "127.0.0.1:${BINIX_DB_HOST_PORT:-15432}:5432"
+    volumes:
+      - binix_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${BINIX_DB_USER:-binix} -d ${BINIX_DB_NAME:-binix}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - binix_internal
+
+  migrate:
+    build:
+      context: .
+      target: migrator
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://${BINIX_DB_USER:-binix}:${BINIX_DB_PASSWORD:?BINIX_DB_PASSWORD is required}@database:5432/${BINIX_DB_NAME:-binix}?schema=public
+      BINIX_SEED_SUPER_ADMIN_PHONE: ${BINIX_SEED_SUPER_ADMIN_PHONE:?BINIX_SEED_SUPER_ADMIN_PHONE is required}
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - binix_internal
+
+  web:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${BINIX_DB_USER:-binix}:${BINIX_DB_PASSWORD:?BINIX_DB_PASSWORD is required}@database:5432/${BINIX_DB_NAME:-binix}?schema=public
+      BINIX_DATA_DRIVER: database
+      BINIX_OTP_DRIVER: ${BINIX_OTP_DRIVER:-mock}
+      BINIX_CREDENTIALS_ENCRYPTION_KEY: ${BINIX_CREDENTIALS_ENCRYPTION_KEY:?BINIX_CREDENTIALS_ENCRYPTION_KEY is required}
+      BINIX_SESSION_COOKIE_NAME: ${BINIX_SESSION_COOKIE_NAME:-binix_session}
+      BINIX_SESSION_TTL_DAYS: ${BINIX_SESSION_TTL_DAYS:-30}
+    ports:
+      - "127.0.0.1:${BINIX_WEB_PORT:-4000}:3000"
+    depends_on:
+      database:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:3000/api/v1/health >/dev/null || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks:
+      - binix_internal
+
+volumes:
+  binix_postgres_data:
+
+networks:
+  binix_internal:
+    driver: bridge

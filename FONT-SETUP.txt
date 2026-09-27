@@ -1,0 +1,15 @@
+فونت‌های باینری داخل این خروجی قرار داده نشده‌اند.
+
+از پروژه قدیمی خودت پوشه زیر را دستی داخل این پروژه کپی کن:
+public/font/
+
+فایل‌های مورد انتظار:
+- Vazir.woff2
+- Vazir-Bold.woff2
+- Vazir-Light.woff2
+- Vazir-Medium.woff2
+- Vazir-Thin.woff2
+- MorabbaVF.woff2 (یا نسخه woff)
+
+سپس در globals.css یا فایل font loader خودت @font-face را تعریف کن.
+Design System از نام‌های Vazir و Morabba استفاده می‌کند.

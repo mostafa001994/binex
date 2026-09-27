@@ -1,0 +1,12 @@
+services:
+  web:
+    environment:
+      BINIX_DATA_DRIVER: database
+      BINIX_OTP_DRIVER: mock
+    networks:
+      - default
+      - shared_postgres
+
+networks:
+  shared_postgres:
+    external: true

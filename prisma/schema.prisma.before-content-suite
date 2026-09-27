@@ -1,0 +1,957 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SystemRole {
+  USER
+  SUPPORT
+  FINANCE
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum OtpPurpose {
+  LOGIN
+  PHONE_VERIFICATION
+}
+
+enum BusinessStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum BusinessMemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum ServiceAvailability {
+  AVAILABLE
+  COMING_SOON
+}
+
+enum ServiceCatalogStatus {
+  DRAFT
+  ACTIVE
+  DISABLED
+}
+
+enum ServiceVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum BusinessServiceStatus {
+  SETUP
+  ACTIVE
+  PAUSED
+  COMING_SOON
+}
+
+enum PlanStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum BillingPeriod {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  CUSTOM
+}
+
+enum SubscriptionStatus {
+  PENDING
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  PAUSED
+  CANCELED
+  EXPIRED
+}
+
+enum ProvisioningStatus {
+  NOT_STARTED
+  QUEUED
+  IN_PROGRESS
+  READY
+  FAILED
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PAYMENT_FAILED
+  CANCELED
+  EXPIRED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum OrderItemType {
+  NEW_SUBSCRIPTION
+  RENEWAL
+  UPGRADE
+}
+
+enum PaymentStatus {
+  INITIATED
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum ProvisioningAction {
+  ACTIVATE
+  UPDATE
+  SUSPEND
+  CANCEL
+}
+
+enum ProvisioningJobStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+enum AutomationConnectorStatus {
+  DRAFT
+  ACTIVE
+  DISABLED
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum SupportTicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum NotificationKind {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+enum ConsultationLeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CLOSED
+}
+
+enum AuditAction {
+  BUSINESS_SERVICE_STATUS_CHANGED
+  BUSINESS_SERVICE_ASSIGNED
+  BUSINESS_SERVICE_REMOVED
+  BUSINESS_STATUS_CHANGED
+  USER_ROLE_CHANGED
+  ADMIN_LOGIN_CHECKED
+  SERVICE_CATALOG_CREATED
+  SERVICE_CATALOG_UPDATED
+  SERVICE_CATALOG_DELETED
+  BUSINESS_MEMBER_ADDED
+  BUSINESS_MEMBER_REMOVED
+  BUSINESS_OWNERSHIP_TRANSFERRED
+  SERVICE_PLAN_CREATED
+  SERVICE_PLAN_UPDATED
+  SERVICE_PLAN_ARCHIVED
+  SUBSCRIPTION_PAUSED
+  SUBSCRIPTION_RESUMED
+  SUBSCRIPTION_CANCELED
+  PROVISIONING_JOB_RETRIED
+  USER_STATUS_CHANGED
+  USER_SESSIONS_REVOKED
+  ACCESS_ROLE_CREATED
+  ACCESS_ROLE_UPDATED
+  USER_CREATED
+  USER_PROFILE_UPDATED
+  SUBSCRIPTION_CREATED
+  SUBSCRIPTION_RENEWED
+  SUBSCRIPTION_PLAN_CHANGED
+  ORDER_NOTE_UPDATED
+  ORDER_CANCELED
+  ORDER_EXPIRED
+  BUSINESS_CREATED
+  BUSINESS_PROFILE_UPDATED
+  BUSINESS_ARCHIVED
+  BUSINESS_RESTORED
+  AUTOMATION_CONNECTOR_UPDATED
+  AUTOMATION_CONNECTOR_CLEARED
+  SUPPORT_TICKET_CREATED
+  SUPPORT_TICKET_UPDATED
+  SUPPORT_TICKET_REPLIED
+  CONSULTATION_LEAD_UPDATED
+}
+
+model AccessRole {
+  id          String      @id @default(uuid()) @db.Uuid
+  code        String      @unique @db.VarChar(80)
+  name        String      @db.VarChar(120)
+  description String?     @db.VarChar(500)
+  systemRole  SystemRole? @unique @map("system_role")
+  isProtected Boolean     @default(false) @map("is_protected")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  permissions AccessRolePermission[]
+  users       User[]
+
+  @@map("access_roles")
+}
+
+model AccessRolePermission {
+  roleId         String @map("role_id") @db.Uuid
+  permissionCode String @map("permission_code") @db.VarChar(100)
+
+  role AccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionCode])
+  @@index([permissionCode])
+  @@map("access_role_permissions")
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  phone        String     @unique @db.VarChar(11)
+  email        String?    @unique @db.VarChar(254)
+  name         String?    @db.VarChar(120)
+  systemRole   SystemRole @default(USER) @map("system_role")
+  accessRoleId String     @map("access_role_id") @db.Uuid
+  status       UserStatus @default(ACTIVE)
+  importantNotificationsOnly Boolean @default(true) @map("important_notifications_only")
+  lastLoginAt  DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sessions               AuthSession[]
+  memberships            BusinessMember[]
+  auditLogs              AuditLog[]             @relation("AuditActor")
+  orders                 Order[]                @relation("OrderCreator")
+  accessRole             AccessRole             @relation(fields: [accessRoleId], references: [id], onDelete: Restrict)
+  createdSupportTickets  SupportTicket[]        @relation("SupportTicketCreator")
+  assignedSupportTickets SupportTicket[]        @relation("SupportTicketAssignee")
+  supportMessages        SupportTicketMessage[]
+  notifications          Notification[]
+
+  @@map("users")
+}
+
+model OtpChallenge {
+  id          String     @id @default(uuid()) @db.Uuid
+  phone       String     @db.VarChar(11)
+  purpose     OtpPurpose @default(LOGIN)
+  codeHash    String     @map("code_hash") @db.VarChar(128)
+  expiresAt   DateTime   @map("expires_at") @db.Timestamptz(3)
+  attempts    Int        @default(0)
+  maxAttempts Int        @default(5) @map("max_attempts")
+  consumedAt  DateTime?  @map("consumed_at") @db.Timestamptz(3)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([phone, expiresAt])
+  @@map("otp_challenges")
+}
+
+model AuthSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(128)
+  userId     String    @map("user_id") @db.Uuid
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("auth_sessions")
+}
+
+model Business {
+  id         String         @id @default(uuid()) @db.Uuid
+  name       String         @db.VarChar(160)
+  phone      String?        @db.VarChar(11)
+  category   String?        @db.VarChar(100)
+  status     BusinessStatus @default(ACTIVE)
+  archivedAt DateTime?      @map("archived_at") @db.Timestamptz(3)
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships      BusinessMember[]
+  services         BusinessService[]
+  credentials      ServiceCredential[]
+  auditLogs        AuditLog[]
+  subscriptions    Subscription[]
+  orders           Order[]
+  provisioningJobs ProvisioningJob[]
+  automationInstances AutomationInstance[]
+  supportTickets   SupportTicket[]
+
+  @@index([status])
+  @@map("businesses")
+}
+
+enum AutomationTemplateStatus {
+  DRAFT
+  ACTIVE
+  DISABLED
+}
+
+enum AutomationInstanceStatus {
+  CREATING
+  ACTIVE
+  SUSPENDED
+  FAILED
+  DELETING
+  DELETED
+}
+
+model AutomationTemplate {
+  id                    String                   @id @default(uuid()) @db.Uuid
+  serviceId             String                   @map("service_id") @db.VarChar(80)
+  version               Int
+  status                AutomationTemplateStatus @default(DRAFT)
+  n8nTemplateWorkflowId String                   @map("n8n_template_workflow_id") @db.VarChar(160)
+  metadata              Json                     @default("{}")
+  createdAt             DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  service   ServiceDefinition    @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  instances AutomationInstance[]
+
+  @@unique([serviceId, version])
+  @@index([serviceId, status])
+  @@map("automation_templates")
+}
+
+model AutomationInstance {
+  id            String                   @id @default(uuid()) @db.Uuid
+  businessId    String                   @map("business_id") @db.Uuid
+  subscriptionId String                  @unique @map("subscription_id") @db.Uuid
+  serviceId     String                   @map("service_id") @db.VarChar(80)
+  templateId    String                   @map("template_id") @db.Uuid
+  templateVersion Int                    @map("template_version")
+  n8nWorkflowId String?                  @unique @map("n8n_workflow_id") @db.VarChar(160)
+  status        AutomationInstanceStatus @default(CREATING)
+  lastError     String?                  @map("last_error") @db.Text
+  metadata      Json                     @default("{}")
+  activatedAt   DateTime?                @map("activated_at") @db.Timestamptz(3)
+  suspendedAt   DateTime?                @map("suspended_at") @db.Timestamptz(3)
+  deletedAt     DateTime?                @map("deleted_at") @db.Timestamptz(3)
+  createdAt     DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  business     Business           @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  subscription Subscription       @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  service      ServiceDefinition  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  template     AutomationTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, serviceId, status])
+  @@index([templateId, status])
+  @@index([serviceId, status])
+  @@map("automation_instances")
+}
+
+model AutomationConnector {
+  id                  String                    @id @default(uuid()) @db.Uuid
+  serviceId           String                    @unique @map("service_id") @db.VarChar(80)
+  status              AutomationConnectorStatus @default(DRAFT)
+  endpointEncrypted   String?                   @map("endpoint_encrypted") @db.Text
+  authSecretEncrypted String?                   @map("auth_secret_encrypted") @db.Text
+  contractVersion     String                    @default("v1") @map("contract_version") @db.VarChar(20)
+  timeoutSeconds      Int                       @default(30) @map("timeout_seconds")
+  createdAt           DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  service ServiceDefinition @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("automation_connectors")
+}
+
+model SupportTicket {
+  id                 String                @id @default(uuid()) @db.Uuid
+  ticketNumber       String                @unique @map("ticket_number") @db.VarChar(40)
+  businessId         String                @map("business_id") @db.Uuid
+  createdByUserId    String                @map("created_by_user_id") @db.Uuid
+  assignedToUserId   String?               @map("assigned_to_user_id") @db.Uuid
+  subject            String                @db.VarChar(180)
+  category           String                @db.VarChar(80)
+  status             SupportTicketStatus   @default(OPEN)
+  priority           SupportTicketPriority @default(NORMAL)
+  lastMessageAt      DateTime              @default(now()) @map("last_message_at") @db.Timestamptz(3)
+  firstResponseDueAt DateTime              @map("first_response_due_at") @db.Timestamptz(3)
+  resolutionDueAt DateTime                 @map("resolution_due_at") @db.Timestamptz(3)
+  firstRespondedAt   DateTime?             @map("first_responded_at") @db.Timestamptz(3)
+  resolvedAt         DateTime?             @map("resolved_at") @db.Timestamptz(3)
+  closedAt           DateTime?             @map("closed_at") @db.Timestamptz(3)
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  business   Business               @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  createdBy  User                   @relation("SupportTicketCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  assignedTo User?                  @relation("SupportTicketAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  messages   SupportTicketMessage[]
+
+  @@index([status, priority, lastMessageAt])
+  @@index([businessId, createdAt])
+  @@index([createdByUserId, createdAt])
+  @@index([assignedToUserId, status])
+  @@index([status, firstResponseDueAt])
+  @@index([status, resolutionDueAt])
+  @@map("support_tickets")
+}
+
+model SupportTicketMessage {
+  id           String   @id @default(uuid()) @db.Uuid
+  ticketId     String   @map("ticket_id") @db.Uuid
+  authorUserId String   @map("author_user_id") @db.Uuid
+  body         String   @db.Text
+  isInternal   Boolean  @default(false) @map("is_internal")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User          @relation(fields: [authorUserId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@index([authorUserId, createdAt])
+  @@map("support_ticket_messages")
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  kind      NotificationKind @default(INFO)
+  title     String           @db.VarChar(160)
+  message   String           @db.VarChar(500)
+  href      String?          @db.VarChar(255)
+  readAt    DateTime?        @map("read_at") @db.Timestamptz(3)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+model ConsultationLead {
+  id           String                 @id @default(uuid()) @db.Uuid
+  name         String?                @db.VarChar(120)
+  phone        String                 @db.VarChar(11)
+  businessName String?                @map("business_name") @db.VarChar(160)
+  businessType String?                @map("business_type") @db.VarChar(100)
+  need         String                 @db.VarChar(120)
+  channel      String?                @db.VarChar(100)
+  note         String?                @db.VarChar(1000)
+  internalNote String?                @map("internal_note") @db.VarChar(2000)
+  source       String                 @default("homepage") @db.VarChar(80)
+  status       ConsultationLeadStatus @default(NEW)
+  consentAt    DateTime               @map("consent_at") @db.Timestamptz(3)
+  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@index([phone, createdAt])
+  @@map("consultation_leads")
+}
+
+model BusinessMember {
+  id         String             @id @default(uuid()) @db.Uuid
+  businessId String             @map("business_id") @db.Uuid
+  userId     String             @map("user_id") @db.Uuid
+  role       BusinessMemberRole
+  createdAt  DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@index([userId])
+  @@map("business_members")
+}
+
+model ServiceDefinition {
+  id            String               @id @db.VarChar(80)
+  slug          String               @unique @db.VarChar(80)
+  name          String               @db.VarChar(120)
+  shortName     String               @map("short_name") @db.VarChar(80)
+  category      String               @db.VarChar(100)
+  description   String               @db.Text
+  appHref       String?              @map("app_href") @db.VarChar(255)
+  marketingHref String               @map("marketing_href") @db.VarChar(255)
+  availability  ServiceAvailability
+  status        ServiceCatalogStatus
+  visibility    ServiceVisibility
+  accent        String               @db.VarChar(40)
+  iconKey       String               @map("icon_key") @db.VarChar(80)
+  sortOrder     Int                  @default(0) @map("sort_order")
+  features      Json
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  businessServices    BusinessService[]
+  credentials         ServiceCredential[]
+  plans               ServicePlan[]
+  subscriptions       Subscription[]
+  orderItems          OrderItem[]
+  provisioningJobs    ProvisioningJob[]
+  automationConnector AutomationConnector?
+  automationTemplates AutomationTemplate[]
+  automationInstances AutomationInstance[]
+
+  @@index([status, visibility, sortOrder])
+  @@map("service_definitions")
+}
+
+model BusinessService {
+  id             String                @id @default(uuid()) @db.Uuid
+  businessId     String                @map("business_id") @db.Uuid
+  serviceId      String                @map("service_id") @db.VarChar(80)
+  status         BusinessServiceStatus @default(SETUP)
+  setupCompleted Boolean               @default(false) @map("setup_completed")
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  business Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  service  ServiceDefinition @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@unique([businessId, serviceId])
+  @@index([serviceId, status])
+  @@map("business_services")
+}
+
+model AuditLog {
+  id          String      @id @default(uuid()) @db.Uuid
+  actorUserId String      @map("actor_user_id") @db.Uuid
+  businessId  String?     @map("business_id") @db.Uuid
+  action      AuditAction
+  targetType  String      @map("target_type") @db.VarChar(80)
+  targetId    String?     @map("target_id") @db.VarChar(100)
+  metadata    Json
+  requestId   String?     @map("request_id") @db.Uuid
+  ipAddress   String?     @map("ip_address") @db.VarChar(64)
+  userAgent   String?     @map("user_agent") @db.VarChar(512)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor    User      @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([businessId, createdAt])
+  @@index([action, createdAt])
+  @@index([targetType, targetId])
+  @@index([requestId])
+  @@map("audit_logs")
+}
+
+model ServiceCredential {
+  id             String   @id @default(uuid()) @db.Uuid
+  businessId     String   @map("business_id") @db.Uuid
+  serviceId      String   @map("service_id") @db.VarChar(80)
+  instanceKey    String   @default("default") @map("instance_key") @db.VarChar(80)
+  kind           String   @db.VarChar(80)
+  encryptedValue String   @map("encrypted_value") @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  business Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  service  ServiceDefinition @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@unique([businessId, serviceId, instanceKey, kind])
+  @@index([serviceId, kind])
+  @@map("service_credentials")
+}
+
+model ServicePlan {
+  id                 String        @id @default(uuid()) @db.Uuid
+  serviceId          String        @map("service_id") @db.VarChar(80)
+  code               String        @db.VarChar(80)
+  name               String        @db.VarChar(120)
+  description        String?       @db.Text
+  status             PlanStatus    @default(DRAFT)
+  billingPeriod      BillingPeriod @map("billing_period")
+  customDurationDays Int?          @map("custom_duration_days")
+  priceAmount        BigInt        @map("price_amount")
+  currency           String        @default("IRR") @db.Char(3)
+  trialDays          Int           @default(0) @map("trial_days")
+  isPublic           Boolean       @default(true) @map("is_public")
+  sortOrder          Int           @default(0) @map("sort_order")
+  features           Json          @default("[]")
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  service       ServiceDefinition @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  subscriptions Subscription[]
+  orderItems    OrderItem[]
+
+  @@unique([serviceId, code])
+  @@index([serviceId, status, sortOrder])
+  @@map("service_plans")
+}
+
+model Subscription {
+  id                    String             @id @default(uuid()) @db.Uuid
+  businessId            String             @map("business_id") @db.Uuid
+  serviceId             String             @map("service_id") @db.VarChar(80)
+  planId                String             @map("plan_id") @db.Uuid
+  status                SubscriptionStatus @default(PENDING)
+  provisioningStatus    ProvisioningStatus @default(NOT_STARTED) @map("provisioning_status")
+  planCodeSnapshot      String             @map("plan_code_snapshot") @db.VarChar(80)
+  planNameSnapshot      String             @map("plan_name_snapshot") @db.VarChar(120)
+  billingPeriod         BillingPeriod      @map("billing_period")
+  customDurationDays    Int?               @map("custom_duration_days")
+  priceAmount           BigInt             @map("price_amount")
+  currency              String             @default("IRR") @db.Char(3)
+  startsAt              DateTime?          @map("starts_at") @db.Timestamptz(3)
+  currentPeriodStartsAt DateTime?          @map("current_period_starts_at") @db.Timestamptz(3)
+  currentPeriodEndsAt   DateTime?          @map("current_period_ends_at") @db.Timestamptz(3)
+  trialEndsAt           DateTime?          @map("trial_ends_at") @db.Timestamptz(3)
+  cancelAtPeriodEnd     Boolean            @default(false) @map("cancel_at_period_end")
+  autoRenew             Boolean            @default(false) @map("auto_renew")
+  canceledAt            DateTime?          @map("canceled_at") @db.Timestamptz(3)
+  endedAt               DateTime?          @map("ended_at") @db.Timestamptz(3)
+  externalReference     String?            @map("external_reference") @db.VarChar(120)
+  metadata              Json               @default("{}")
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  business         Business          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  service          ServiceDefinition @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  plan             ServicePlan       @relation(fields: [planId], references: [id], onDelete: Restrict)
+  orderItems       OrderItem[]
+  provisioningJobs ProvisioningJob[]
+  automationInstance AutomationInstance?
+
+  @@index([businessId, status, currentPeriodEndsAt])
+  @@index([serviceId, status])
+  @@index([planId])
+  @@map("subscriptions")
+}
+
+model Order {
+  id              String      @id @default(uuid()) @db.Uuid
+  orderNumber     String      @unique @map("order_number") @db.VarChar(40)
+  businessId      String      @map("business_id") @db.Uuid
+  createdByUserId String?     @map("created_by_user_id") @db.Uuid
+  status          OrderStatus @default(PENDING_PAYMENT)
+  currency        String      @default("IRR") @db.Char(3)
+  subtotalAmount  BigInt      @map("subtotal_amount")
+  discountAmount  BigInt      @default(0) @map("discount_amount")
+  taxAmount       BigInt      @default(0) @map("tax_amount")
+  totalAmount     BigInt      @map("total_amount")
+  expiresAt       DateTime?   @map("expires_at") @db.Timestamptz(3)
+  paidAt          DateTime?   @map("paid_at") @db.Timestamptz(3)
+  canceledAt      DateTime?   @map("canceled_at") @db.Timestamptz(3)
+  metadata        Json        @default("{}")
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  business  Business    @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  createdBy User?       @relation("OrderCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  items     OrderItem[]
+  payments  Payment[]
+
+  @@index([businessId, status, createdAt])
+  @@index([createdByUserId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                    String        @id @default(uuid()) @db.Uuid
+  orderId               String        @map("order_id") @db.Uuid
+  serviceId             String        @map("service_id") @db.VarChar(80)
+  planId                String        @map("plan_id") @db.Uuid
+  subscriptionId        String?       @map("subscription_id") @db.Uuid
+  type                  OrderItemType @default(NEW_SUBSCRIPTION)
+  serviceNameSnapshot   String        @map("service_name_snapshot") @db.VarChar(120)
+  planCodeSnapshot      String        @map("plan_code_snapshot") @db.VarChar(80)
+  planNameSnapshot      String        @map("plan_name_snapshot") @db.VarChar(120)
+  billingPeriodSnapshot BillingPeriod @map("billing_period_snapshot")
+  customDurationDays    Int?          @map("custom_duration_days")
+  unitAmount            BigInt        @map("unit_amount")
+  quantity              Int           @default(1)
+  totalAmount           BigInt        @map("total_amount")
+  metadata              Json          @default("{}")
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order        Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  service      ServiceDefinition @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  plan         ServicePlan       @relation(fields: [planId], references: [id], onDelete: Restrict)
+  subscription Subscription?     @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([serviceId, planId])
+  @@index([subscriptionId])
+  @@map("order_items")
+}
+
+model Payment {
+  id                String        @id @default(uuid()) @db.Uuid
+  orderId           String        @map("order_id") @db.Uuid
+  provider          String        @db.VarChar(80)
+  status            PaymentStatus @default(INITIATED)
+  amount            BigInt
+  refundedAmount    BigInt        @default(0) @map("refunded_amount")
+  currency          String        @default("IRR") @db.Char(3)
+  idempotencyKey    String        @unique @map("idempotency_key") @db.VarChar(120)
+  providerPaymentId String?       @map("provider_payment_id") @db.VarChar(160)
+  providerReference String?       @map("provider_reference") @db.VarChar(160)
+  failureCode       String?       @map("failure_code") @db.VarChar(80)
+  failureMessage    String?       @map("failure_message") @db.VarChar(500)
+  metadata          Json          @default("{}")
+  requestedAt       DateTime      @default(now()) @map("requested_at") @db.Timestamptz(3)
+  paidAt            DateTime?     @map("paid_at") @db.Timestamptz(3)
+  failedAt          DateTime?     @map("failed_at") @db.Timestamptz(3)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerReference])
+  @@index([orderId, status, createdAt])
+  @@index([provider, providerPaymentId])
+  @@map("payments")
+}
+
+model PaymentGateway {
+  id          String   @id @default(uuid()) @db.Uuid
+
+  name        String   @db.VarChar(120)
+
+  slug        String   @unique @db.VarChar(80)
+
+  provider    String   @db.VarChar(80)
+
+  logoUrl String? @map("logo_url")
+
+  enabled     Boolean  @default(false)
+
+  priority    Int      @default(0)
+
+  isDefault   Boolean  @default(false) @map("is_default")
+
+  config      Json     @default("{}")
+
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([enabled, priority])
+  @@map("payment_gateways")
+}
+
+model ProvisioningJob {
+  id             String                @id @default(uuid()) @db.Uuid
+  subscriptionId String                @map("subscription_id") @db.Uuid
+  businessId     String                @map("business_id") @db.Uuid
+  serviceId      String                @map("service_id") @db.VarChar(80)
+  action         ProvisioningAction
+  status         ProvisioningJobStatus @default(PENDING)
+  idempotencyKey String                @unique @map("idempotency_key") @db.VarChar(160)
+  attemptCount   Int                   @default(0) @map("attempt_count")
+  maxAttempts    Int                   @default(5) @map("max_attempts")
+  nextAttemptAt  DateTime?             @map("next_attempt_at") @db.Timestamptz(3)
+  lockedAt       DateTime?             @map("locked_at") @db.Timestamptz(3)
+  n8nExecutionId String?               @map("n8n_execution_id") @db.VarChar(160)
+  lastError      String?               @map("last_error") @db.Text
+  payload        Json                  @default("{}")
+  completedAt    DateTime?             @map("completed_at") @db.Timestamptz(3)
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  subscription Subscription      @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  business     Business          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  service      ServiceDefinition @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@index([status, nextAttemptAt, createdAt])
+  @@index([subscriptionId, createdAt])
+  @@index([businessId, serviceId, status])
+  @@map("provisioning_jobs")
+}
+
+
+
+
+
+model NotificationProvider {
+
+  id String @id @default(uuid()) @db.Uuid
+
+  name String @db.VarChar(120)
+
+  channel String @db.VarChar(50)
+
+  provider String @db.VarChar(80)
+
+  enabled Boolean @default(true)
+
+  isDefault Boolean @default(false) @map("is_default")
+
+  priority Int @default(0)
+
+  config Json @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+
+  @@index([channel, enabled, priority])
+
+  @@map("notification_providers")
+}
+
+
+
+model NotificationEvent {
+
+  id String @id @default(uuid()) @db.Uuid
+
+  key String @unique @db.VarChar(120)
+
+  name String @db.VarChar(120)
+
+  module String @db.VarChar(80)
+
+  enabled Boolean @default(true)
+
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+
+  @@map("notification_events")
+}
+
+
+
+model NotificationTemplate {
+
+  id String @id @default(uuid()) @db.Uuid
+
+
+  eventKey String @db.VarChar(120)
+
+  channel String @db.VarChar(50)
+
+
+  title String?
+
+
+  body String
+
+
+  variables Json @default("{}")
+
+
+  enabled Boolean @default(true)
+
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+
+  @@index([eventKey])
+
+  @@unique([eventKey, channel])
+
+  @@map("notification_templates")
+}
+
+
+
+model NotificationLog {
+
+  id String @id @default(uuid()) @db.Uuid
+
+
+  eventKey String @db.VarChar(120)
+
+
+  channel String @db.VarChar(50)
+
+
+  receiver String @db.VarChar(120)
+
+
+  message String
+
+
+  status String @db.VarChar(40)
+
+
+  providerId String?
+
+
+  referenceId String? @db.Uuid
+
+
+  referenceType String? @db.VarChar(80)
+
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+
+  @@index([eventKey,status])
+
+  @@map("notification_logs")
+}
+
+
+model NotificationRule {
+
+  id String @id @default(uuid()) @db.Uuid
+
+  name String @db.VarChar(120)
+
+  eventKey String @db.VarChar(120)
+
+  channel String @db.VarChar(50)
+
+  enabled Boolean @default(true)
+
+  delayDays Int @default(0)
+
+  conditions Json @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([eventKey, enabled])
+
+  @@map("notification_rules")
+}
+

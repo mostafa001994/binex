@@ -1,0 +1,172 @@
+"use client";
+
+import {
+  ChevronLeft,
+  ChevronRight,
+  Sparkles,
+} from "lucide-react";
+import { useState } from "react";
+import { SidebarItem } from "@/components/shell/sidebar-item";
+import {
+  appPrimaryNavigation,
+  appSecondaryNavigation,
+} from "@/constants/app-navigation";
+import { useBusiness } from "@/components/business/business-context";
+import { getServiceAppHref } from "@/lib/service-links";
+import { cn } from "@/lib/cn";
+
+export function AppSidebar() {
+  const [
+    collapsed,
+    setCollapsed,
+  ] = useState(false);
+  const { services } =
+    useBusiness();
+
+  const visibleServices =
+    services.filter(
+      (item) =>
+        item.status !==
+          "coming-soon" &&
+        item.service?.availability !==
+          "coming-soon",
+    );
+
+  return (
+    <aside
+      className={cn(
+        "sticky top-0 hidden h-dvh shrink-0 flex-col border-l border-border bg-surface/95 backdrop-blur-xl transition-[width] duration-200 lg:flex",
+        collapsed
+          ? "w-[72px]"
+          : "w-64",
+      )}
+    >
+      <div className="flex h-16 items-center gap-3 border-b border-border-subtle px-4">
+        <div className="relative flex size-9 shrink-0 items-center justify-center rounded-control border border-primary/20 bg-primary/10 text-primary">
+          <Sparkles
+            size={18}
+            aria-hidden="true"
+          />
+          <span className="absolute -left-0.5 -top-0.5 size-2 rounded-full border-2 border-surface bg-success" />
+        </div>
+
+        {!collapsed && (
+          <div className="min-w-0">
+            <div
+              data-display-title="true"
+              className="truncate text-lg font-bold"
+            >
+              Binix
+            </div>
+            <div className="font-ui truncate text-[11px] text-foreground-subtle">
+              مرکز کنترل کسب‌وکار
+            </div>
+          </div>
+        )}
+      </div>
+
+      <nav
+        aria-label="ناوبری پنل"
+        className="flex-1 space-y-1.5 overflow-y-auto p-3"
+      >
+        {appPrimaryNavigation.map(
+          (item) => (
+            <SidebarItem
+              key={item.href}
+              {...item}
+              collapsed={
+                collapsed
+              }
+            />
+          ),
+        )}
+
+        {!collapsed &&
+          visibleServices.length >
+            0 && (
+            <div className="px-3 pb-1 pt-5 font-ui text-[11px] font-medium text-foreground-subtle">
+              سرویس‌های من
+            </div>
+          )}
+
+        {visibleServices.map(
+          (assignment) => {
+            const service =
+              assignment.service;
+
+            if (!service) {
+              return null;
+            }
+
+            return (
+              <SidebarItem
+                key={
+                  assignment.id
+                }
+                href={getServiceAppHref(
+                  service,
+                )}
+                label={
+                  service.shortName
+                }
+                icon={
+                  service.iconKey
+                }
+                collapsed={
+                  collapsed
+                }
+              />
+            );
+          },
+        )}
+
+        <div className="my-3 border-t border-border-subtle" />
+
+        {appSecondaryNavigation.map(
+          (item) => (
+            <SidebarItem
+              key={item.href}
+              {...item}
+              collapsed={
+                collapsed
+              }
+            />
+          ),
+        )}
+      </nav>
+
+      <div className="border-t border-border-subtle p-3">
+        <button
+          type="button"
+          onClick={() =>
+            setCollapsed(
+              (value) =>
+                !value,
+            )
+          }
+          className="font-ui flex h-10 w-full items-center justify-center gap-2 rounded-control text-sm text-foreground-muted transition hover:bg-surface-hover hover:text-foreground"
+          aria-label={
+            collapsed
+              ? "باز کردن منو"
+              : "جمع کردن منو"
+          }
+        >
+          {collapsed ? (
+            <ChevronLeft
+              size={18}
+            />
+          ) : (
+            <>
+              <ChevronRight
+                size={18}
+              />
+              <span>
+                جمع کردن منو
+              </span>
+            </>
+          )}
+        </button>
+      </div>
+    </aside>
+  );
+}

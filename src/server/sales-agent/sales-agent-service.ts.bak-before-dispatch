@@ -1,0 +1,591 @@
+import type { AuthUser } from "@/server/auth/auth-types";
+import {
+  ProvisioningAction,
+  ProvisioningStatus,
+  SubscriptionStatus,
+} from "@/generated/prisma/client";
+import { dispatchProvisioningJob } from "@/server/automation/provisioning-dispatcher";
+import { getPrismaClient } from "@/server/db/prisma";
+import { getCurrentBusinessContext } from "@/server/business/business-service";
+import {
+  ForbiddenApiError,
+  ValidationApiError,
+} from "@/server/core/api-error";
+import { getSalesAgentRepository } from "@/server/repositories/repository-provider";
+import { decryptSecret, encryptSecret } from "@/server/security/secret-crypto";
+import type {
+  SalesAgentCredentialStatus,
+  SalesAgentCredentials,
+} from "@/server/sales-agent/sales-agent-types";
+
+async function getBusinessId(user: AuthUser) {
+  const businessContext = await getCurrentBusinessContext(user);
+  const service = businessContext.services.find(
+    (item) => item.serviceId === "sales-agent",
+  );
+
+  if (!service) {
+    throw new ForbiddenApiError(
+      "فروشنده هوشمند برای این کسب‌وکار فعال نشده است.",
+    );
+  }
+
+  if (
+    service.status === "paused" ||
+    service.status === "coming-soon"
+  ) {
+    throw new ForbiddenApiError(
+      "فروشنده هوشمند در حال حاضر قابل استفاده نیست.",
+    );
+  }
+
+  return businessContext.business.id;
+}
+
+function normalizeToken(
+  value: unknown,
+  label: string,
+): string {
+  if (typeof value !== "string") {
+    throw new ValidationApiError(`${label} معتبر نیست.`);
+  }
+
+  const token = value.trim();
+
+  if (token.length < 8) {
+    throw new ValidationApiError(
+      `${label} باید حداقل ۸ کاراکتر باشد.`,
+    );
+  }
+
+  if (token.length > 2048) {
+    throw new ValidationApiError(
+      `${label} بیش از حد طولانی است.`,
+    );
+  }
+
+  return token;
+}
+
+async function queueSalesAgentCredentialUpdate(
+  businessId: string,
+  provider: "bale" | "woocommerce",
+  operation: "replace" | "delete",
+) {
+  const prisma = getPrismaClient();
+
+  const result = await prisma.$transaction(async (tx) => {
+    const subscription = await tx.subscription.findFirst({
+      where: {
+        businessId,
+        serviceId: "sales-agent",
+        status: {
+          in: [
+            SubscriptionStatus.ACTIVE,
+            SubscriptionStatus.TRIALING,
+          ],
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!subscription) {
+      return null;
+    }
+
+    await tx.subscription.update({
+      where: {
+        id: subscription.id,
+      },
+      data: {
+        provisioningStatus: ProvisioningStatus.QUEUED,
+      },
+    });
+
+    const job = await tx.provisioningJob.create({
+      data: {
+        subscriptionId: subscription.id,
+        businessId,
+        serviceId: "sales-agent",
+        action: ProvisioningAction.UPDATE,
+        idempotencyKey:
+          `sales-agent:credential:${provider}:${operation}:${crypto.randomUUID()}`,
+        payload: {
+          source: "customer-credential",
+          provider,
+          operation,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    return job;
+  });
+
+  if (result) {
+    await dispatchProvisioningJob(result.id);
+  }
+
+  return result?.id ?? null;
+}
+
+function maskConfigured(configured: boolean) {
+  return configured ? "••••••••••••" : null;
+}
+
+function decryptStoreUrl(
+  encrypted: string | null,
+): string | null {
+  if (!encrypted) return null;
+
+  try {
+    return decryptSecret(encrypted);
+  } catch {
+    return null;
+  }
+}
+
+function toStatus(
+  credentials: SalesAgentCredentials,
+): SalesAgentCredentialStatus {
+  const baleConfigured = Boolean(
+    credentials.baleBotTokenEncrypted,
+  );
+
+  const wooKeyConfigured = Boolean(
+    credentials.woocommerceConsumerKeyEncrypted,
+  );
+
+  const wooSecretConfigured = Boolean(
+    credentials.woocommerceConsumerSecretEncrypted,
+  );
+
+  const wooStoreUrl = decryptStoreUrl(
+    credentials.woocommerceStoreUrlEncrypted,
+  );
+
+  return {
+    baleBotTokenConfigured: baleConfigured,
+    baleBotTokenMasked: maskConfigured(baleConfigured),
+
+    woocommerceConfigured: Boolean(
+      wooStoreUrl &&
+      wooKeyConfigured &&
+      wooSecretConfigured,
+    ),
+
+    woocommerceStoreUrl: wooStoreUrl,
+
+    woocommerceConsumerKeyConfigured:
+      wooKeyConfigured,
+
+    woocommerceConsumerSecretConfigured:
+      wooSecretConfigured,
+
+    woocommerceConsumerKeyMasked:
+      maskConfigured(wooKeyConfigured),
+
+    woocommerceConsumerSecretMasked:
+      maskConfigured(wooSecretConfigured),
+
+    updatedAt: credentials.updatedAt,
+  };
+}
+
+export async function getSalesAgentCredentialStatus(
+  user: AuthUser,
+) {
+  const businessId = await getBusinessId(user);
+  const credentials =
+    await getSalesAgentRepository().getCredentials(businessId);
+
+  return toStatus(credentials);
+}
+
+
+function sanitizeVerificationError(
+  provider: "bale" | "woocommerce",
+  value: string | null,
+): string | null {
+  if (!value) return null;
+
+  if (
+    /\b(401|403)\b/.test(value) ||
+    /authentication|unauthorized|forbidden/i.test(
+      value,
+    )
+  ) {
+    return provider === "bale"
+      ? "توکن بات بله معتبر نیست."
+      : "Consumer Key یا Consumer Secret ووکامرس معتبر نیست.";
+  }
+
+  if (
+    /timeout|timed out|network|econn|enotfound|dns/i.test(
+      value,
+    )
+  ) {
+    return provider === "bale"
+      ? "ارتباط با سرویس بله برقرار نشد. دوباره تلاش کنید."
+      : "ارتباط با فروشگاه ووکامرس برقرار نشد. دوباره تلاش کنید.";
+  }
+
+  if (/incomplete/i.test(value)) {
+    return "اطلاعات اتصال کامل نیست.";
+  }
+
+  if (/https/i.test(value)) {
+    return "آدرس اتصال باید از HTTPS استفاده کند.";
+  }
+
+  return provider === "bale"
+    ? "تأیید اتصال بله ناموفق بود."
+    : "تأیید اتصال ووکامرس ناموفق بود.";
+}
+
+export async function getSalesAgentCredentialVerification(
+  user: AuthUser,
+  providerValue: unknown,
+  jobIdValue?: unknown,
+) {
+  const businessId = await getBusinessId(user);
+
+  if (
+    providerValue !== "bale" &&
+    providerValue !== "woocommerce"
+  ) {
+    throw new ValidationApiError(
+      "ارائه‌دهنده اتصال معتبر نیست.",
+    );
+  }
+
+  const provider = providerValue;
+
+  if (
+    jobIdValue !== undefined &&
+    jobIdValue !== null &&
+    jobIdValue !== "" &&
+    (
+      typeof jobIdValue !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        jobIdValue,
+      )
+    )
+  ) {
+    throw new ValidationApiError(
+      "شناسه بررسی اتصال معتبر نیست.",
+    );
+  }
+
+  const prisma = getPrismaClient();
+
+  const select = {
+    id: true,
+    status: true,
+    lastError: true,
+    payload: true,
+    createdAt: true,
+    updatedAt: true,
+    completedAt: true,
+  } as const;
+
+  let job: {
+    id: string;
+    status: string;
+    lastError: string | null;
+    payload: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+    completedAt: Date | null;
+  } | null = null;
+
+  if (
+    typeof jobIdValue === "string" &&
+    jobIdValue
+  ) {
+    job =
+      await prisma.provisioningJob.findFirst({
+        where: {
+          id: jobIdValue,
+          businessId,
+          serviceId: "sales-agent",
+        },
+        select,
+      });
+  } else {
+    const jobs =
+      await prisma.provisioningJob.findMany({
+        where: {
+          businessId,
+          serviceId: "sales-agent",
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 30,
+        select,
+      });
+
+    job =
+      jobs.find((candidate) => {
+        const payload =
+          candidate.payload &&
+          typeof candidate.payload === "object" &&
+          !Array.isArray(candidate.payload)
+            ? candidate.payload as Record<
+                string,
+                unknown
+              >
+            : {};
+
+        return (
+          payload.source ===
+            "customer-credential" &&
+          payload.provider === provider &&
+          payload.operation === "replace"
+        );
+      }) ?? null;
+  }
+
+  if (!job) {
+    return {
+      provider,
+      jobId: null,
+      status: "idle" as const,
+      error: null,
+      createdAt: null,
+      updatedAt: null,
+      completedAt: null,
+    };
+  }
+
+  const payload =
+    job.payload &&
+    typeof job.payload === "object" &&
+    !Array.isArray(job.payload)
+      ? job.payload as Record<string, unknown>
+      : {};
+
+  if (
+    payload.source !== "customer-credential" ||
+    payload.provider !== provider ||
+    payload.operation !== "replace"
+  ) {
+    throw new ValidationApiError(
+      "این Job مربوط به این اتصال نیست.",
+    );
+  }
+
+  const normalizedStatus =
+    job.status.toLowerCase() as
+      | "pending"
+      | "processing"
+      | "succeeded"
+      | "failed"
+      | "canceled";
+
+  return {
+    provider,
+    jobId: job.id,
+    status: normalizedStatus,
+    error:
+      normalizedStatus === "failed"
+        ? sanitizeVerificationError(
+            provider,
+            job.lastError,
+          )
+        : null,
+    createdAt:
+      job.createdAt.toISOString(),
+    updatedAt:
+      job.updatedAt.toISOString(),
+    completedAt:
+      job.completedAt?.toISOString() ??
+      null,
+  };
+}
+
+export async function replaceSalesAgentCredential(
+  user: AuthUser,
+  body: Record<string, unknown>,
+) {
+  const businessId = await getBusinessId(user);
+  const provider = body.provider;
+
+  if (provider === "bale") {
+    const token = normalizeToken(
+      body.token,
+      "توکن بات بله",
+    );
+
+    const credentials =
+      await getSalesAgentRepository().updateCredentials(
+        businessId,
+        {
+          baleBotTokenEncrypted:
+            encryptSecret(token),
+        },
+      );
+
+    const verificationJobId =
+      await queueSalesAgentCredentialUpdate(
+        businessId,
+        "bale",
+        "replace",
+      );
+
+    return {
+      credentials: toStatus(credentials),
+      verificationJobId,
+    };
+  }
+
+  if (provider === "woocommerce") {
+    if (
+      typeof body.storeUrl !== "string" ||
+      typeof body.consumerKey !== "string" ||
+      typeof body.consumerSecret !== "string"
+    ) {
+      throw new ValidationApiError(
+        "اطلاعات اتصال ووکامرس کامل نیست.",
+      );
+    }
+
+    let parsed: URL;
+
+    try {
+      parsed = new URL(body.storeUrl.trim());
+    } catch {
+      throw new ValidationApiError(
+        "آدرس فروشگاه معتبر نیست.",
+      );
+    }
+
+    if (
+      parsed.protocol !== "https:" &&
+      parsed.protocol !== "http:"
+    ) {
+      throw new ValidationApiError(
+        "آدرس فروشگاه باید با http یا https شروع شود.",
+      );
+    }
+
+    parsed.pathname =
+      parsed.pathname.replace(/\/+$/, "");
+    parsed.search = "";
+    parsed.hash = "";
+
+    const storeUrl =
+      parsed.toString().replace(/\/$/, "");
+
+    const consumerKey = normalizeToken(
+      body.consumerKey,
+      "Consumer Key",
+    );
+
+    const consumerSecret = normalizeToken(
+      body.consumerSecret,
+      "Consumer Secret",
+    );
+
+    if (!consumerKey.startsWith("ck_")) {
+      throw new ValidationApiError(
+        "Consumer Key ووکامرس باید با ck_ شروع شود.",
+      );
+    }
+
+    if (!consumerSecret.startsWith("cs_")) {
+      throw new ValidationApiError(
+        "Consumer Secret ووکامرس باید با cs_ شروع شود.",
+      );
+    }
+
+    const credentials =
+      await getSalesAgentRepository().updateCredentials(
+        businessId,
+        {
+          woocommerceStoreUrlEncrypted:
+            encryptSecret(storeUrl),
+
+          woocommerceConsumerKeyEncrypted:
+            encryptSecret(consumerKey),
+
+          woocommerceConsumerSecretEncrypted:
+            encryptSecret(consumerSecret),
+        },
+      );
+
+    const verificationJobId =
+      await queueSalesAgentCredentialUpdate(
+        businessId,
+        "woocommerce",
+        "replace",
+      );
+
+    return {
+      credentials: toStatus(credentials),
+      verificationJobId,
+    };
+  }
+
+  throw new ValidationApiError(
+    "نوع اتصال معتبر نیست.",
+  );
+}
+
+export async function deleteSalesAgentCredential(
+  user: AuthUser,
+  provider: string,
+) {
+  const businessId = await getBusinessId(user);
+
+  if (provider === "bale") {
+    const credentials =
+      await getSalesAgentRepository().updateCredentials(
+        businessId,
+        {
+          baleBotTokenEncrypted: null,
+        },
+      );
+
+    await queueSalesAgentCredentialUpdate(
+      businessId,
+      "bale",
+      "delete",
+    );
+
+    return toStatus(credentials);
+  }
+
+  if (provider === "woocommerce") {
+    const credentials =
+      await getSalesAgentRepository().updateCredentials(
+        businessId,
+        {
+          woocommerceStoreUrlEncrypted: null,
+          woocommerceConsumerKeyEncrypted: null,
+          woocommerceConsumerSecretEncrypted: null,
+        },
+      );
+
+    await queueSalesAgentCredentialUpdate(
+      businessId,
+      "woocommerce",
+      "delete",
+    );
+
+    return toStatus(credentials);
+  }
+
+  throw new ValidationApiError(
+    "نوع اتصال معتبر نیست.",
+  );
+}
+

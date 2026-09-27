@@ -1,0 +1,143 @@
+@import "tailwindcss";
+
+/*
+  Binix UI Tokens
+  Font files are intentionally NOT included.
+  Load your licensed/local font files separately and map them to:
+  --font-vazir
+  --font-morabba
+*/
+
+:root {
+  --font-vazir: "Vazir", "Vazirmatn", system-ui, sans-serif;
+  --font-morabba: "Morabba", "Vazir", "Vazirmatn", system-ui, sans-serif;
+
+  --background: #F6F9FC;
+  --surface: #FFFFFF;
+  --surface-muted: #F8FAFC;
+  --surface-raised: #EFF4F9;
+  --surface-hover: #F1F6FA;
+
+  --foreground: #071426;
+  --foreground-muted: #53657B;
+  --foreground-subtle: #7B8B9E;
+  --foreground-disabled: #A7B0BC;
+
+  --border: rgba(15, 36, 60, 0.11);
+  --border-subtle: rgba(15, 36, 60, 0.06);
+  --border-strong: rgba(15, 36, 60, 0.18);
+
+  --primary: #067BE8;
+  --primary-hover: #056DD0;
+  --accent: #00ADB9;
+
+  --success: #22C984;
+  --warning: #F6B73C;
+  --error: #F05B67;
+  --info: #3A9DFF;
+
+  --service-sales: #8B6CFF;
+  --service-booking: #2F8FFF;
+  --service-excel: #00C6BD;
+  --service-bi: #6366F1;
+
+  --radius-control: 10px;
+  --radius-card: 14px;
+  --radius-panel: 18px;
+
+  --shadow-sm: 0 2px 10px rgba(12, 32, 58, 0.06);
+  --shadow-md: 0 8px 28px rgba(12, 32, 58, 0.10);
+  --shadow-lg: 0 20px 50px rgba(12, 32, 58, 0.13);
+
+  --glow-sm: 0 0 16px rgba(0, 173, 185, 0.16);
+  --glow-md: 0 0 28px rgba(6, 123, 232, 0.18);
+}
+
+.dark {
+  --background: #020817;
+  --surface: #06111F;
+  --surface-muted: #081727;
+  --surface-raised: #0B1D31;
+  --surface-hover: #0D2239;
+
+  --foreground: #F5F9FF;
+  --foreground-muted: #A7B5C8;
+  --foreground-subtle: #708197;
+  --foreground-disabled: #4D5C70;
+
+  --border: rgba(148, 183, 220, 0.16);
+  --border-subtle: rgba(148, 183, 220, 0.10);
+  --border-strong: rgba(148, 183, 220, 0.28);
+
+  --primary: #078BFF;
+  --primary-hover: #159AFF;
+  --accent: #00D5E8;
+
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.24);
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.30);
+
+  --glow-sm: 0 0 16px rgba(0, 213, 232, 0.18);
+  --glow-md: 0 0 28px rgba(7, 139, 255, 0.22);
+}
+
+@theme inline {
+  --font-ui: var(--font-vazir);
+  --font-display: var(--font-morabba);
+
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-hover: var(--surface-hover);
+
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-foreground-disabled: var(--foreground-disabled);
+
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-accent: var(--accent);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-info: var(--info);
+
+  --color-service-sales: var(--service-sales);
+  --color-service-booking: var(--service-booking);
+  --color-service-excel: var(--service-excel);
+  --color-service-bi: var(--service-bi);
+
+  --radius-control: var(--radius-control);
+  --radius-card: var(--radius-card);
+  --radius-panel: var(--radius-panel);
+
+  --shadow-binix-sm: var(--shadow-sm);
+  --shadow-binix-md: var(--shadow-md);
+  --shadow-binix-lg: var(--shadow-lg);
+  --shadow-glow-sm: var(--glow-sm);
+  --shadow-glow-md: var(--glow-md);
+}
+
+html {
+  direction: rtl;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-vazir);
+}
+
+h1,
+h2,
+h3,
+[data-display-title="true"] {
+  font-family: var(--font-morabba);
+}

@@ -1,0 +1,6 @@
+BINIX_DATA_DRIVER=mock
+BINIX_OTP_DRIVER=mock
+
+# 32 random bytes, base64 encoded.
+# Required in production for encrypted service credentials.
+BINIX_CREDENTIALS_ENCRYPTION_KEY=

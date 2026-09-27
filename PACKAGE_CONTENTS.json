@@ -1,0 +1,13 @@
+{
+  "version": "V5.31.5",
+  "base_required": "V5.31.4",
+  "scope": "Fix mock business member update/remove to use shared mock store",
+  "package_json_changed": false,
+  "new_dependencies": [],
+  "files": [
+    "src/server/repositories/mock/mock-business-member-repository.ts",
+    "tests/v5315-mock-business-member-store.test.mjs",
+    "CHANGES-V5.31.5.md",
+    "PACKAGE_CONTENTS.json"
+  ]
+}

@@ -1,0 +1,11 @@
+services:
+  web:
+    networks:
+      - binix_internal
+      - shared_net
+      - proxy
+networks:
+  shared_net:
+    external: true
+  proxy:
+    external: true

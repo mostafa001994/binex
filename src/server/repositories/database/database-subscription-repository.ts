@@ -1,0 +1,122 @@
+import { dispatchProvisioningJob } from "@/server/automation/provisioning-dispatcher";
+import { createAutomationPayload, AutomationEvents } from "@/server/automation/events";
+
+import { Prisma, ProvisioningAction, ProvisioningStatus, SubscriptionStatus, type Subscription } from "@/generated/prisma/client";
+import { getPrismaClient } from "@/server/db/prisma";
+import type { AdminSubscriptionRecord, SubscriptionRepository, SubscriptionStatusValue } from "@/server/repositories/contracts/subscription-repository";
+
+const statusToDb: Record<SubscriptionStatusValue, SubscriptionStatus> = {
+  pending: SubscriptionStatus.PENDING,
+  trialing: SubscriptionStatus.TRIALING,
+  active: SubscriptionStatus.ACTIVE,
+  "past-due": SubscriptionStatus.PAST_DUE,
+  paused: SubscriptionStatus.PAUSED,
+  canceled: SubscriptionStatus.CANCELED,
+  expired: SubscriptionStatus.EXPIRED,
+};
+
+const include = { business: { select: { name: true } }, service: { select: { name: true } }, plan: { select: { name: true } } } as const;
+type WithRelations = Subscription & { business: { name: string }; service: { name: string }; plan: { name: string } };
+
+function kebab(value: string) { return value.toLowerCase().replaceAll("_", "-"); }
+function record(item: WithRelations): AdminSubscriptionRecord {
+  return {
+    id: item.id, businessId: item.businessId, businessName: item.business.name,
+    serviceId: item.serviceId, serviceName: item.service.name, planId: item.planId,
+    planName: item.planNameSnapshot || item.plan.name,
+    status: kebab(item.status) as AdminSubscriptionRecord["status"],
+    provisioningStatus: kebab(item.provisioningStatus) as AdminSubscriptionRecord["provisioningStatus"],
+    billingPeriod: kebab(item.billingPeriod) as AdminSubscriptionRecord["billingPeriod"],
+    priceAmount: item.priceAmount.toString(), currency: item.currency,
+    currentPeriodStartsAt: item.currentPeriodStartsAt?.toISOString() ?? null,
+    currentPeriodEndsAt: item.currentPeriodEndsAt?.toISOString() ?? null,
+    trialEndsAt: item.trialEndsAt?.toISOString() ?? null,
+    cancelAtPeriodEnd: item.cancelAtPeriodEnd, autoRenew: item.autoRenew,
+    createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString(),
+  };
+}
+
+export class DatabaseSubscriptionRepository implements SubscriptionRepository {
+  async search(input: Parameters<SubscriptionRepository["search"]>[0]) {
+    const page = Math.max(1, Math.floor(input.page || 1));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(input.pageSize || 20)));
+    const query = input.search?.trim();
+    const where: Prisma.SubscriptionWhereInput = {
+      status: input.status ? statusToDb[input.status] : undefined,
+      serviceId: input.serviceId || undefined,
+      OR: query ? [
+        { business: { name: { contains: query, mode: "insensitive" } } },
+        { service: { name: { contains: query, mode: "insensitive" } } },
+        { planNameSnapshot: { contains: query, mode: "insensitive" } },
+      ] : undefined,
+    };
+    const prisma = getPrismaClient();
+    const total = await prisma.subscription.count({ where });
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const items = await prisma.subscription.findMany({ where, include, orderBy: { createdAt: "desc" }, skip: (safePage - 1) * pageSize, take: pageSize });
+    return { items: items.map(record), pagination: { page: safePage, pageSize, total, totalPages } };
+  }
+
+  async findById(id: string) {
+    const item = await getPrismaClient().subscription.findUnique({ where: { id }, include });
+    return item ? record(item) : null;
+  }
+
+  async listForBusiness(businessId: string) {
+    const items = await getPrismaClient().subscription.findMany({
+      where: { businessId },
+      include,
+      orderBy: { createdAt: "desc" },
+    });
+
+    return items.map(record);
+  }
+
+  async findForBusiness(businessId: string, id: string) {
+    const item = await getPrismaClient().subscription.findFirst({
+      where: { id, businessId },
+      include,
+    });
+
+    return item ? record(item) : null;
+  }
+
+  async transitionStatus(id: string, expected: SubscriptionStatusValue, status: SubscriptionStatusValue, action: "activate" | "suspend" | "cancel") {
+    const result = await getPrismaClient().$transaction(async (tx) => {
+      const changed = await tx.subscription.updateMany({
+        where: { id, status: statusToDb[expected] },
+        data: {
+          status: statusToDb[status],
+          provisioningStatus: ProvisioningStatus.QUEUED,
+          canceledAt: status === "canceled" ? new Date() : undefined,
+          endedAt: status === "canceled" ? new Date() : undefined,
+        },
+      });
+      if (!changed.count) return null;
+      const provisioningJob = await tx.provisioningJob.create({
+        data: {
+          subscriptionId: id,
+          businessId: (await tx.subscription.findUniqueOrThrow({ where: { id }, select: { businessId: true } })).businessId,
+          serviceId: (await tx.subscription.findUniqueOrThrow({ where: { id }, select: { serviceId: true } })).serviceId,
+          action: action === "activate" ? ProvisioningAction.ACTIVATE : action === "suspend" ? ProvisioningAction.SUSPEND : ProvisioningAction.CANCEL,
+          idempotencyKey: `admin:${id}:${status}:${crypto.randomUUID()}`,
+          payload: { source: "admin" },
+        },
+      });
+      const item = await tx.subscription.findUniqueOrThrow({ where: { id }, include });
+      return {
+        subscription: record(item),
+        provisioningJobId: provisioningJob.id,
+      };
+    });
+
+    if (result) {
+      await dispatchProvisioningJob(
+        result.provisioningJobId,
+      );
+    }
+
+    return result?.subscription ?? null;
+  }
+}

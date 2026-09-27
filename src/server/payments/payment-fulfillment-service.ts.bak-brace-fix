@@ -1,0 +1,469 @@
+import {
+  BusinessServiceStatus,
+  ProvisioningAction,
+  ProvisioningStatus,
+  SubscriptionStatus,
+} from "@/generated/prisma/client";
+
+import {
+  dispatchProvisioningJob,
+} from "@/server/automation/provisioning-dispatcher";
+
+import {
+  getPrismaClient,
+} from "@/server/db/prisma";
+
+
+
+function calculatePeriodEnd(
+  start:Date,
+  billingPeriod:string,
+  customDurationDays?:number|null,
+){
+
+  const end =
+    new Date(start);
+
+
+  switch(billingPeriod){
+
+
+    case "MONTHLY":
+
+      end.setMonth(
+        end.getMonth() + 1
+      );
+
+      break;
+
+
+
+    case "QUARTERLY":
+
+      end.setMonth(
+        end.getMonth() + 3
+      );
+
+      break;
+
+
+
+    case "YEARLY":
+
+      end.setFullYear(
+        end.getFullYear() + 1
+      );
+
+      break;
+
+
+
+    case "CUSTOM":
+
+      if(!customDurationDays){
+
+        throw new Error(
+          "customDurationDays is required"
+        );
+
+      }
+
+
+      end.setDate(
+        end.getDate() + customDurationDays
+      );
+
+      break;
+
+
+
+    default:
+
+      throw new Error(
+        `Unsupported billing period: ${billingPeriod}`
+      );
+
+  }
+
+
+  return end;
+
+}
+
+
+
+
+export async function fulfillPaidOrder(
+  orderId:string,
+){
+
+
+ const prisma =
+  getPrismaClient();
+
+
+
+ const result =
+ await prisma.$transaction(
+ async(tx)=>{
+
+
+  const order =
+   await tx.order.findUnique({
+
+    where:{
+     id:orderId,
+    },
+
+
+    include:{
+     items:true,
+    },
+
+   });
+
+
+
+  if(!order){
+
+    throw new Error(
+      "Order not found"
+    );
+
+  }
+
+
+
+
+  const createdJobs:string[]=[];
+
+
+
+
+  for(const item of order.items){
+
+
+
+    if(
+      item.type !== "NEW_SUBSCRIPTION"
+    ){
+
+      continue;
+
+    }
+
+
+
+
+    let subscription =
+      await tx.subscription.findFirst({
+
+       where:{
+
+        businessId:
+          order.businessId,
+
+
+        serviceId:
+          item.serviceId,
+
+
+        status:
+          SubscriptionStatus.ACTIVE,
+
+       },
+
+      });
+
+
+
+
+
+
+    const now =
+      new Date();
+
+
+const periodStart =
+ subscription &&
+ subscription.currentPeriodEndsAt &&
+ subscription.currentPeriodEndsAt > now
+ ?
+ subscription.currentPeriodEndsAt
+ :
+ now;
+
+
+const newPeriodEnd =
+ calculatePeriodEnd(
+   periodStart,
+   item.billingPeriodSnapshot,
+   item.customDurationDays,
+ );
+
+
+
+
+
+
+
+
+    if(subscription){
+
+
+      await tx.subscription.update({
+
+        where:{
+          id:
+            subscription.id,
+        },
+
+
+        data:{
+
+
+          planId:
+            item.planId,
+
+
+          planCodeSnapshot:
+            item.planCodeSnapshot,
+
+
+          planNameSnapshot:
+            item.planNameSnapshot,
+
+
+          billingPeriod:
+            item.billingPeriodSnapshot,
+
+
+          customDurationDays:
+            item.customDurationDays,
+
+
+          priceAmount:
+            item.unitAmount,
+
+
+            currentPeriodStartsAt:
+             periodStart,
+
+          currentPeriodEndsAt:
+            newPeriodEnd,
+
+        },
+
+      });
+
+
+
+    }
+    else {
+
+
+
+      subscription =
+      await tx.subscription.create({
+
+       data:{
+
+
+        businessId:
+          order.businessId,
+
+
+        serviceId:
+          item.serviceId,
+
+
+        planId:
+          item.planId,
+
+
+        status:
+          SubscriptionStatus.ACTIVE,
+
+
+        provisioningStatus:
+          ProvisioningStatus.QUEUED,
+
+
+        priceAmount:
+          item.unitAmount,
+
+
+        currency:
+          order.currency,
+
+
+        billingPeriod:
+          item.billingPeriodSnapshot,
+
+
+        customDurationDays:
+          item.customDurationDays,
+
+
+        planNameSnapshot:
+          item.planNameSnapshot,
+
+
+        planCodeSnapshot:
+          item.planCodeSnapshot,
+
+
+        startsAt:
+          now,
+
+
+        currentPeriodStartsAt:
+          now,
+
+
+        currentPeriodEndsAt:
+          newPeriodEnd,
+
+       },
+
+      });
+
+
+
+
+      await tx.businessService.upsert({
+        where: {
+          businessId_serviceId: {
+            businessId: order.businessId,
+            serviceId: item.serviceId,
+          },
+        },
+        update: {
+          status: BusinessServiceStatus.SETUP,
+          setupCompleted: false,
+        },
+        create: {
+          businessId: order.businessId,
+          serviceId: item.serviceId,
+          status: BusinessServiceStatus.SETUP,
+          setupCompleted: false,
+        },
+      });
+
+
+      await tx.orderItem.update({
+        where:{
+          id:
+            item.id,
+        },
+
+        data:{
+          subscriptionId:
+            subscription.id,
+        },
+
+      });
+
+
+    const existingJob =
+      await tx.provisioningJob.findFirst({
+
+       where:{
+
+
+        subscriptionId:
+          subscription.id,
+
+
+        idempotencyKey:
+          `payment:${order.id}:${subscription.id}`,
+
+       },
+
+      });
+
+
+
+
+    if(existingJob){
+
+      continue;
+
+    }
+
+
+
+
+
+    const job =
+      await tx.provisioningJob.create({
+
+       data:{
+
+
+        subscriptionId:
+          subscription.id,
+
+
+        businessId:
+          order.businessId,
+
+
+        serviceId:
+          item.serviceId,
+
+
+        action:
+          ProvisioningAction.ACTIVATE,
+
+
+        idempotencyKey:
+          `payment:${order.id}:${subscription.id}`,
+
+
+
+        payload:{
+
+          source:
+            "payment",
+
+
+          orderId,
+
+        },
+
+
+       },
+
+      });
+
+
+
+
+    createdJobs.push(
+      job.id
+    );
+
+
+
+  }
+
+
+    return createdJobs;
+  },
+);
+
+
+ for(
+   const jobId of result
+ ){
+
+   await dispatchProvisioningJob(
+     jobId
+   );
+
+ }
+
+
+
+}

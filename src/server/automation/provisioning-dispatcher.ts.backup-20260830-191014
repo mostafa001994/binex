@@ -1,0 +1,129 @@
+import { createHmac } from "node:crypto";
+
+import { AutomationConnectorStatus } from "@/generated/prisma/client";
+import { getPrismaClient } from "@/server/db/prisma";
+import { decryptSecret } from "@/server/security/secret-crypto";
+
+export type ProvisioningDispatchPayload = {
+  contractVersion: "1";
+  event: "provisioning.requested";
+  timestamp: string;
+  data: {
+    provisioningJobId: string;
+    subscriptionId: string;
+    businessId: string;
+    serviceId: string;
+    action: "activate" | "update" | "suspend" | "cancel";
+  };
+};
+
+function normalizeContractVersion(value: string) {
+  return value === "v1" ? "1" : value;
+}
+
+export async function dispatchProvisioningJob(
+  provisioningJobId: string,
+): Promise<void> {
+  const prisma = getPrismaClient();
+
+  const job = await prisma.provisioningJob.findUnique({
+    where: {
+      id: provisioningJobId,
+    },
+    include: {
+      subscription: true,
+    },
+  });
+
+  if (!job) {
+    throw new Error(
+      `Provisioning job ${provisioningJobId} was not found.`,
+    );
+  }
+
+  const connector =
+    await prisma.automationConnector.findUnique({
+      where: {
+        serviceId: job.serviceId,
+      },
+    });
+
+  if (
+    !connector ||
+    connector.status !== AutomationConnectorStatus.ACTIVE ||
+    !connector.endpointEncrypted
+  ) {
+    throw new Error(
+      `Active automation connector is not configured for service ${job.serviceId}.`,
+    );
+  }
+
+  const endpoint = decryptSecret(
+    connector.endpointEncrypted,
+  );
+
+  const authSecret = connector.authSecretEncrypted
+    ? decryptSecret(connector.authSecretEncrypted)
+    : null;
+
+  const action = job.action.toLowerCase() as
+    | "activate"
+    | "update"
+    | "suspend"
+    | "cancel";
+
+  const payload: ProvisioningDispatchPayload = {
+    contractVersion: normalizeContractVersion(
+      connector.contractVersion,
+    ) as "1",
+    event: "provisioning.requested",
+    timestamp: new Date().toISOString(),
+    data: {
+      provisioningJobId: job.id,
+      subscriptionId: job.subscriptionId,
+      businessId: job.businessId,
+      serviceId: job.serviceId,
+      action,
+    },
+  };
+
+  const rawBody = JSON.stringify(payload);
+
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+
+  if (authSecret) {
+    headers["x-binix-signature"] = createHmac(
+      "sha256",
+      authSecret,
+    )
+      .update(rawBody)
+      .digest("hex");
+  }
+
+  const controller = new AbortController();
+
+  const timeout = setTimeout(
+    () => controller.abort(),
+    connector.timeoutSeconds * 1000,
+  );
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: rawBody,
+      signal: controller.signal,
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Automation connector returned HTTP ${response.status}.`,
+      );
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}

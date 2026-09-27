@@ -1,0 +1,1500 @@
+type ApiSuccess<T> = {
+  success: true;
+  data: T;
+};
+
+type ApiFailure = {
+  success: false;
+  error: {
+    message: string;
+  };
+};
+
+async function api<T>(
+  url: string,
+  init?: RequestInit,
+) {
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      Accept: "application/json",
+      ...(init?.body
+        ? { "Content-Type": "application/json" }
+        : {}),
+      ...(init?.headers || {}),
+    },
+  });
+
+  const payload = (await response.json()) as
+    | ApiSuccess<T>
+    | ApiFailure;
+
+  if (!response.ok || !payload.success) {
+    throw new Error(
+      (payload as ApiFailure).error?.message ||
+        "درخواست مدیریت انجام نشد.",
+    );
+  }
+
+  return payload.data;
+}
+
+export type AdminUser = {
+  id: string;
+  phone: string;
+  email: string | null;
+  name: string | null;
+  role: AppRole;
+  accessRole: {
+    id: string;
+    code: string;
+    name: string;
+    isProtected: boolean;
+  };
+  permissions: string[];
+  status: "active" | "blocked";
+  createdAt: string;
+};
+
+export type AdminPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+export type AdminBusiness = {
+  id: string;
+  name: string;
+  phone: string | null;
+  category: string | null;
+  status: "active" | "suspended" | "archived";
+  archivedAt: string | null;
+  memberCount: number;
+  owner: {
+    id: string;
+    phone: string;
+    name: string | null;
+  } | null;
+  createdAt: string;
+  services: Array<{
+    id: string;
+    businessId: string;
+    serviceId: string;
+    status:
+      | "setup"
+      | "active"
+      | "paused"
+      | "coming-soon";
+    setupCompleted: boolean;
+    createdAt: string;
+  }>;
+};
+
+export function getAdminSessionApi() {
+  return api<{
+    authorized: true;
+    user: AdminUser;
+  }>("/api/v1/admin/session");
+}
+
+export function getAdminDashboardApi() {
+  return api<{
+    counts: {
+      users: number;
+      businesses: number;
+      suspendedBusinesses: number;
+      activeServices: number;
+      setupServices: number;
+      pausedServices: number;
+      activeSubscriptions: number;
+      pastDueSubscriptions: number;
+      pendingOrders: number;
+      failedPayments: number;
+      queuedProvisioning: number;
+      failedProvisioning: number;
+      paidVolume30d: string;
+    };
+    recentAudit: Array<{
+      id: string;
+      action: string;
+      targetId: string | null;
+      createdAt: string;
+    }>;
+  }>("/api/v1/admin/dashboard");
+}
+
+export function getAdminUsersApi(input: {
+  search?: string;
+  roleId?: string;
+  status?: AdminUser["status"] | "";
+  page?: number;
+  pageSize?: number;
+} = {}) {
+  const query = new URLSearchParams();
+
+  if (input.search)
+    query.set("search", input.search);
+  if (input.roleId)
+    query.set("roleId", input.roleId);
+  if (input.status)
+    query.set("status", input.status);
+  query.set(
+    "page",
+    String(input.page ?? 1),
+  );
+  query.set(
+    "pageSize",
+    String(input.pageSize ?? 20),
+  );
+
+  return api<{
+    items: AdminUser[];
+    pagination: AdminPagination;
+  }>(`/api/v1/admin/users?${query}`);
+}
+
+export type AdminRoleOption = { id: string; code: string; name: string; isProtected: boolean };
+
+export function getAdminRoleOptionsApi() {
+  return api<{ roles: AdminRoleOption[] }>("/api/v1/admin/role-options");
+}
+
+export function createAdminUserApi(input: { phone: string; name: string; email: string; accessRoleId?: string }) {
+  return api<{ user: AdminUser }>("/api/v1/admin/users", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateAdminUserIdentityApi(userId: string, input: { name: string; email: string }) {
+  return api<{ user: AdminUser }>(`/api/v1/admin/users/${userId}`, { method: "PATCH", body: JSON.stringify({ operation: "update-profile", ...input }) });
+}
+
+export function getAdminUserApi(
+  userId: string,
+) {
+  return api<{
+    user: AdminUser;
+    businesses: Array<{
+      business: Omit<
+        AdminBusiness,
+        "memberCount" | "services" | "owner"
+      >;
+      membership: {
+        id: string;
+        businessId: string;
+        userId: string;
+        role: "owner" | "admin" | "member";
+        createdAt: string;
+      };
+    }>;
+    canManageRole: boolean;
+    canManageIdentity: boolean;
+    canManageSecurity: boolean;
+    activeSessionCount: number;
+  }>(`/api/v1/admin/users/${userId}`);
+}
+
+export function updateAdminUserRoleApi(
+  userId: string,
+  accessRoleId: string,
+) {
+  return api<{ user: AdminUser }>(
+    `/api/v1/admin/users/${userId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ accessRoleId }),
+    },
+  );
+}
+
+export type AdminAccessRole = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  isProtected: boolean;
+  permissions: string[];
+  userCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminPermissionDefinition = { code: string; label: string; group: string };
+
+export function getAdminAccessRolesApi() {
+  return api<{ roles: AdminAccessRole[]; permissions: AdminPermissionDefinition[] }>("/api/v1/admin/roles");
+}
+
+export function createAdminAccessRoleApi(input: { code: string; name: string; description: string; permissions: string[] }) {
+  return api<{ role: AdminAccessRole }>("/api/v1/admin/roles", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateAdminAccessRoleApi(roleId: string, input: { name: string; description: string; permissions: string[] }) {
+  return api<{ role: AdminAccessRole }>(`/api/v1/admin/roles/${roleId}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function updateAdminUserStatusApi(userId: string, status: AdminUser["status"]) {
+  return api<{ user: AdminUser; revokedSessions: number }>(`/api/v1/admin/users/${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ operation: "set-status", status }),
+  });
+}
+
+export function revokeAdminUserSessionsApi(userId: string) {
+  return api<{ revokedSessions: number }>(`/api/v1/admin/users/${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ operation: "revoke-sessions" }),
+  });
+}
+
+export function getAdminBusinessesApi(input: {
+  search?: string;
+  status?: AdminBusiness["status"] | "";
+  serviceStatus?:
+    | AdminBusiness["services"][number]["status"]
+    | "";
+  page?: number;
+  pageSize?: number;
+} = {}) {
+  const query = new URLSearchParams();
+
+  if (input.search)
+    query.set("search", input.search);
+  if (input.status)
+    query.set("status", input.status);
+  if (input.serviceStatus)
+    query.set(
+      "serviceStatus",
+      input.serviceStatus,
+    );
+
+  query.set(
+    "page",
+    String(input.page ?? 1),
+  );
+  query.set(
+    "pageSize",
+    String(input.pageSize ?? 20),
+  );
+
+  return api<{
+    items: AdminBusiness[];
+    pagination: AdminPagination;
+  }>(`/api/v1/admin/businesses?${query}`);
+}
+
+export function getAdminBusinessApi(
+  businessId: string,
+) {
+  return api<{
+    business: Omit<
+      AdminBusiness,
+      "memberCount" | "services" | "owner"
+    >;
+    members: Array<{
+      id: string;
+      businessId: string;
+      userId: string;
+      role: "owner" | "admin" | "member";
+      createdAt: string;
+      user: {
+        id: string;
+        phone: string;
+        name: string | null;
+        role:
+          AppRole;
+      } | null;
+    }>;
+    services: Array<{
+      definition: {
+        id: string;
+        name: string;
+        shortName: string;
+        category: string;
+        description: string;
+        availability:
+          | "available"
+          | "coming-soon";
+      };
+      state:
+        | AdminBusiness["services"][number]
+        | null;
+    }>;
+    salesAgentCredentials: {
+      baleBotTokenConfigured: boolean;
+      woocommerceTokenConfigured: boolean;
+    } | null;
+    commerce: {
+      counts: { subscriptions: number; activeSubscriptions: number; orders: number; pendingOrders: number };
+      recentSubscriptions: Array<{ id: string; status: string; serviceName: string; planName: string; currentPeriodEndsAt: string | null }>;
+      recentOrders: Array<{ id: string; orderNumber: string; status: string; totalAmount: string; createdAt: string }>;
+    };
+  }>(`/api/v1/admin/businesses/${businessId}`);
+}
+
+export function createAdminBusinessApi(input: { name: string; phone: string; category: string; ownerUserId: string }) {
+  return api<{ business: AdminBusiness }>("/api/v1/admin/businesses", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateAdminBusinessProfileApi(businessId: string, input: { name: string; phone: string; category: string }) {
+  return api<{ business: AdminBusiness }>(`/api/v1/admin/businesses/${businessId}`, { method: "PATCH", body: JSON.stringify({ operation: "update-profile", ...input }) });
+}
+
+export function archiveAdminBusinessApi(businessId: string) {
+  return api<{ business: AdminBusiness }>(`/api/v1/admin/businesses/${businessId}`, { method: "PATCH", body: JSON.stringify({ operation: "archive" }) });
+}
+
+export function restoreAdminBusinessApi(businessId: string) {
+  return api<{ business: AdminBusiness }>(`/api/v1/admin/businesses/${businessId}`, { method: "PATCH", body: JSON.stringify({ operation: "restore" }) });
+}
+
+export function updateAdminBusinessStatusApi(
+  businessId: string,
+  status: "active" | "suspended",
+) {
+  return api<{
+    business: AdminBusiness;
+  }>(
+    `/api/v1/admin/businesses/${businessId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    },
+  );
+}
+
+export function assignAdminBusinessServiceApi(
+  businessId: string,
+  serviceId: string,
+) {
+  return api<{
+    service: AdminBusiness["services"][number];
+  }>(
+    `/api/v1/admin/businesses/${businessId}/services/${serviceId}`,
+    { method: "POST" },
+  );
+}
+
+export function updateAdminBusinessServiceApi(
+  businessId: string,
+  serviceId: string,
+  status:
+    | "setup"
+    | "active"
+    | "paused"
+    | "coming-soon",
+) {
+  return api<{
+    service: AdminBusiness["services"][number];
+  }>(
+    `/api/v1/admin/businesses/${businessId}/services/${serviceId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    },
+  );
+}
+
+export function removeAdminBusinessServiceApi(
+  businessId: string,
+  serviceId: string,
+) {
+  return api<{ deleted: true }>(
+    `/api/v1/admin/businesses/${businessId}/services/${serviceId}`,
+    { method: "DELETE" },
+  );
+}
+
+
+export type AdminAuditItem = {
+  id: string;
+  actorUserId: string;
+  actor: {
+    phone: string;
+    name: string | null;
+  } | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  metadata: Record<string, string | number | boolean | null>;
+  requestId: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+};
+
+export function getAdminAuditApi(input: {
+  action?: string;
+  actorUserId?: string;
+  actorQuery?: string;
+  targetType?: string;
+  targetId?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+} = {}) {
+  const query = new URLSearchParams();
+
+  Object.entries(input).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") {
+      query.set(key, String(value));
+    }
+  });
+
+  return api<{
+    items: AdminAuditItem[];
+    pagination: AdminPagination;
+  }>(`/api/v1/admin/audit?${query}`);
+}
+
+export function getAdminSystemApi() {
+  return api<{
+    environment: string;
+    dataDriver: string;
+    otpDriver: string;
+    repositoryMode: string;
+    version: string;
+    credentialsEncryptionConfigured: boolean;
+    serverTime: string;
+    checks: {
+      api: string;
+      repository: string;
+    };
+  }>("/api/v1/admin/system");
+}
+
+
+export type AdminCatalogService = {
+  id: string;
+  slug: string;
+  name: string;
+  shortName: string;
+  category: string;
+  description: string;
+  appHref: string | null;
+  marketingHref: string;
+  availability:
+    | "available"
+    | "coming-soon";
+  status:
+    | "draft"
+    | "active"
+    | "disabled";
+  visibility:
+    | "public"
+    | "private";
+  accent: string;
+  iconKey: string;
+  sortOrder: number;
+  features: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function getAdminCatalogServicesApi() {
+  return api<{
+    services: AdminCatalogService[];
+  }>("/api/v1/admin/services");
+}
+
+export function createAdminCatalogServiceApi(
+  input: Omit<
+    AdminCatalogService,
+    "createdAt" | "updatedAt"
+  >,
+) {
+  return api<{
+    service: AdminCatalogService;
+  }>("/api/v1/admin/services", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateAdminCatalogServiceApi(
+  serviceId: string,
+  input: Partial<
+    Omit<
+      AdminCatalogService,
+      "id" | "createdAt" | "updatedAt"
+    >
+  >,
+) {
+  return api<{
+    service: AdminCatalogService;
+  }>(
+    `/api/v1/admin/services/${serviceId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function deleteAdminCatalogServiceApi(
+  serviceId: string,
+) {
+  return api<{
+    deleted: true;
+  }>(
+    `/api/v1/admin/services/${serviceId}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export type AdminServicePlan = {
+  id: string;
+  serviceId: string;
+  code: string;
+  name: string;
+  description: string | null;
+  status: "draft" | "active" | "archived";
+  billingPeriod: "monthly" | "quarterly" | "yearly" | "custom";
+  customDurationDays: number | null;
+  priceAmount: string;
+  currency: string;
+  trialDays: number;
+  isPublic: boolean;
+  sortOrder: number;
+  features: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function getAdminPlansApi(serviceId = "") {
+  const query = serviceId ? `?serviceId=${encodeURIComponent(serviceId)}` : "";
+  return api<{ plans: AdminServicePlan[] }>(`/api/v1/admin/plans${query}`);
+}
+
+export function createAdminPlanApi(input: Omit<AdminServicePlan, "id" | "createdAt" | "updatedAt">) {
+  return api<{ plan: AdminServicePlan }>("/api/v1/admin/plans", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateAdminPlanApi(planId: string, input: Partial<Omit<AdminServicePlan, "id" | "serviceId" | "code" | "createdAt" | "updatedAt">>) {
+  return api<{ plan: AdminServicePlan }>(`/api/v1/admin/plans/${planId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export type AdminSubscription = {
+  id: string; businessId: string; businessName: string; serviceId: string; serviceName: string;
+  planId: string; planName: string;
+  status: "pending" | "trialing" | "active" | "past-due" | "paused" | "canceled" | "expired";
+  provisioningStatus: "not-started" | "queued" | "in-progress" | "ready" | "failed";
+  billingPeriod: "monthly" | "quarterly" | "yearly" | "custom";
+  priceAmount: string; currency: string; currentPeriodStartsAt: string | null; currentPeriodEndsAt: string | null;
+  trialEndsAt: string | null; cancelAtPeriodEnd: boolean; autoRenew: boolean; createdAt: string; updatedAt: string;
+};
+
+export function getAdminSubscriptionsApi(input: { search?: string; status?: string; serviceId?: string; page?: number } = {}) {
+  const query = new URLSearchParams();
+  Object.entries(input).forEach(([key, value]) => { if (value !== undefined && value !== "") query.set(key, String(value)); });
+  return api<{ items: AdminSubscription[]; pagination: AdminPagination }>(`/api/v1/admin/subscriptions?${query}`);
+}
+
+export function transitionAdminSubscriptionApi(subscriptionId: string, operation: "pause" | "resume" | "cancel") {
+  return api<{ subscription: AdminSubscription }>(`/api/v1/admin/subscriptions/${subscriptionId}`, {
+    method: "PATCH", body: JSON.stringify({ operation }),
+  });
+}
+
+export function createAdminSubscriptionApi(input: { businessId: string; planId: string; status: "pending" | "trialing" | "active"; startsAt?: string }) {
+  return api<{ subscription: AdminSubscription }>("/api/v1/admin/subscriptions", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function renewAdminSubscriptionApi(subscriptionId: string) {
+  return api<{ subscription: AdminSubscription }>(`/api/v1/admin/subscriptions/${subscriptionId}`, { method: "PATCH", body: JSON.stringify({ operation: "renew" }) });
+}
+
+export function changeAdminSubscriptionPlanApi(subscriptionId: string, planId: string) {
+  return api<{ subscription: AdminSubscription }>(`/api/v1/admin/subscriptions/${subscriptionId}`, { method: "PATCH", body: JSON.stringify({ operation: "change-plan", planId }) });
+}
+
+export type AdminOrder = {
+  id: string; orderNumber: string; businessId: string; businessName: string;
+  createdByName: string | null; createdByPhone: string | null;
+  status: "pending-payment" | "paid" | "payment-failed" | "canceled" | "expired" | "refunded" | "partially-refunded";
+  currency: string; subtotalAmount: string; discountAmount: string; taxAmount: string; totalAmount: string;
+  expiresAt: string | null; paidAt: string | null; canceledAt: string | null; createdAt: string; updatedAt: string;
+  internalNote: string | null;
+  items: Array<{
+    id: string; serviceId: string; serviceName: string; planName: string; planCode: string;
+    type: "new-subscription" | "renewal" | "upgrade";
+    billingPeriod: "monthly" | "quarterly" | "yearly" | "custom";
+    unitAmount: string; quantity: number; totalAmount: string; subscriptionId: string | null;
+  }>;
+  payments: Array<{
+    id: string; provider: string;
+    status: "initiated" | "pending" | "succeeded" | "failed" | "canceled" | "refunded" | "partially-refunded";
+    amount: string; refundedAmount: string; currency: string; providerPaymentId: string | null;
+    providerReference: string | null; failureCode: string | null; failureMessage: string | null;
+    requestedAt: string; paidAt: string | null; failedAt: string | null;
+  }>;
+};
+
+export function getAdminOrdersApi(input: { search?: string; orderStatus?: string; paymentStatus?: string; serviceId?: string; page?: number } = {}) {
+  const query = new URLSearchParams();
+  Object.entries(input).forEach(([key, value]) => { if (value !== undefined && value !== "") query.set(key, String(value)); });
+  return api<{ items: AdminOrder[]; pagination: AdminPagination }>(`/api/v1/admin/orders?${query}`);
+}
+
+export function getAdminOrderApi(orderId: string) {
+  return api<{ order: AdminOrder }>(`/api/v1/admin/orders/${orderId}`);
+}
+
+export function updateAdminOrderNoteApi(orderId: string, note: string) {
+  return api<{ order: AdminOrder }>(`/api/v1/admin/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ operation: "update-note", note }) });
+}
+
+export function transitionAdminUnpaidOrderApi(orderId: string, operation: "cancel" | "expire") {
+  return api<{ order: AdminOrder }>(`/api/v1/admin/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ operation }) });
+}
+
+export type AdminPayment = {
+  id: string; orderId: string; orderNumber: string; businessId: string; businessName: string;
+  provider: string; status: AdminOrder["payments"][number]["status"];
+  amount: string; refundedAmount: string; currency: string;
+  providerPaymentId: string | null; providerReference: string | null;
+  failureCode: string | null; failureMessage: string | null;
+  requestedAt: string; paidAt: string | null; failedAt: string | null;
+  reconciliation: { status: "consistent" | "needs-review"; issues: string[] };
+};
+
+export function getAdminPaymentsApi(input: { search?: string; status?: string; provider?: string; page?: number; pageSize?: number } = {}) {
+  const query = new URLSearchParams();
+  Object.entries(input).forEach(([key, value]) => { if (value !== undefined && value !== "") query.set(key, String(value)); });
+  return api<{
+    items: AdminPayment[];
+    providers: string[];
+    summary: { succeeded: number; failed: number; pending: number; needsReview: number };
+    pagination: AdminPagination;
+  }>(`/api/v1/admin/payments?${query}`);
+}
+
+export type AdminProvisioningJob = {
+  id: string; subscriptionId: string; businessId: string; businessName: string;
+  serviceId: string; serviceName: string; action: "activate" | "update" | "suspend" | "cancel";
+  status: "pending" | "processing" | "succeeded" | "failed" | "canceled";
+  subscriptionStatus: "pending" | "trialing" | "active" | "past-due" | "paused" | "canceled" | "expired";
+  attemptCount: number; maxAttempts: number; nextAttemptAt: string | null; lockedAt: string | null;
+  n8nExecutionId: string | null; lastError: string | null; completedAt: string | null;
+  createdAt: string; updatedAt: string;
+};
+
+export function getAdminProvisioningJobsApi(input: { search?: string; status?: string; action?: string; serviceId?: string; page?: number } = {}) {
+  const query = new URLSearchParams();
+  Object.entries(input).forEach(([key, value]) => { if (value !== undefined && value !== "") query.set(key, String(value)); });
+  return api<{ items: AdminProvisioningJob[]; pagination: AdminPagination }>(`/api/v1/admin/provisioning?${query}`);
+}
+export function retryAdminProvisioningJobApi(jobId: string) {
+  return api<{ job: AdminProvisioningJob }>(`/api/v1/admin/provisioning/${jobId}`, { method: "PATCH", body: JSON.stringify({ operation: "retry" }) });
+}
+
+export type AdminAutomationConnector = {
+  service: { id: string; name: string; shortName: string; availability: string; status: string };
+  connector: null | {
+    id: string; status: "draft" | "active" | "disabled";
+    endpointConfigured: boolean; authSecretConfigured: boolean;
+    contractVersion: string; timeoutSeconds: number; updatedAt: string;
+  };
+  queue: { pending: number; processing: number; succeeded: number; failed: number };
+};
+
+export function getAdminAutomationConnectorsApi() {
+  return api<{ items: AdminAutomationConnector[] }>("/api/v1/admin/automations");
+}
+
+export function updateAdminAutomationConnectorApi(serviceId: string, input: { status: "draft" | "active" | "disabled"; endpoint: string; authSecret: string; timeoutSeconds: number }) {
+  return api<{ connector: NonNullable<AdminAutomationConnector["connector"]> }>(`/api/v1/admin/automations/${serviceId}`, { method: "PATCH", body: JSON.stringify({ operation: "update", ...input }) });
+}
+
+export function clearAdminAutomationConnectorApi(serviceId: string) {
+  return api<{ connector: NonNullable<AdminAutomationConnector["connector"]> }>(`/api/v1/admin/automations/${serviceId}`, { method: "PATCH", body: JSON.stringify({ operation: "clear" }) });
+}
+
+
+export function addAdminBusinessMemberApi(
+  businessId: string,
+  input: {
+    userId: string;
+    role: "owner" | "admin" | "member";
+  },
+) {
+  return api<{
+    member: {
+      id: string;
+      businessId: string;
+      userId: string;
+      role:
+        | "owner"
+        | "admin"
+        | "member";
+      createdAt: string;
+    };
+  }>(
+    `/api/v1/admin/businesses/${businessId}/members`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function removeAdminBusinessMemberApi(
+  businessId: string,
+  memberId: string,
+) {
+  return api<{
+    deleted: true;
+  }>(
+    `/api/v1/admin/businesses/${businessId}/members/${memberId}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export function transferAdminBusinessOwnershipApi(
+  businessId: string,
+  newOwnerMemberId: string,
+) {
+  return api<{
+    previousOwner: {
+      id: string;
+      businessId: string;
+      userId: string;
+      role:
+        | "owner"
+        | "admin"
+        | "member";
+      createdAt: string;
+    };
+    owner: {
+      id: string;
+      businessId: string;
+      userId: string;
+      role: "owner";
+      createdAt: string;
+    };
+  }>(
+    `/api/v1/admin/businesses/${businessId}/ownership`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        newOwnerMemberId,
+      }),
+    },
+  );
+}
+import type { AppRole } from "@/lib/roles";
+
+export type AdminPaymentGateway = {
+  id: string;
+  name: string;
+  slug: string;
+  provider: string;
+  enabled: boolean;
+  priority: number;
+  isDefault: boolean;
+  config: unknown;
+  createdAt: string;
+  updatedAt: string;
+};
+
+
+export function getAdminPaymentGatewaysApi() {
+  return api<{
+    gateways: AdminPaymentGateway[];
+  }>(
+    "/api/v1/admin/payment-gateways",
+  );
+}
+
+
+export function createAdminPaymentGatewayApi(
+  input: Omit<
+    AdminPaymentGateway,
+    "id" | "createdAt" | "updatedAt" | "isDefault"
+  >,
+) {
+
+  return api<{
+    gateway: AdminPaymentGateway;
+  }>(
+    "/api/v1/admin/payment-gateways",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+
+}
+
+
+export function updateAdminPaymentGatewayApi(
+  gatewayId:string,
+  input:Partial<
+    Omit<
+      AdminPaymentGateway,
+      "id" | "slug" | "provider" | "createdAt" | "updatedAt"
+    >
+  >,
+){
+
+  return api<{
+    gateway: AdminPaymentGateway;
+  }>(
+    `/api/v1/admin/payment-gateways/${gatewayId}`,
+    {
+      method:"PATCH",
+      body:JSON.stringify(input),
+    },
+  );
+
+}
+
+
+
+export function deleteAdminPaymentGatewayApi(
+ gatewayId:string,
+){
+
+ return api<{
+  deleted:true;
+ }>(
+  `/api/v1/admin/payment-gateways/${gatewayId}`,
+  {
+   method:"DELETE",
+  },
+ );
+
+}
+
+
+
+export function testAdminPaymentGatewayApi(
+  gatewayId:string,
+){
+  return api<{
+    success:boolean;
+    message:string;
+  }>(
+    `/api/v1/admin/payment-gateways/${gatewayId}/test`,
+    {
+      method:"POST",
+    },
+  );
+}
+
+
+export function setDefaultAdminPaymentGatewayApi(
+  gatewayId:string,
+){
+  return api<{
+    gateway:AdminPaymentGateway;
+  }>(
+    `/api/v1/admin/payment-gateways/${gatewayId}/default`,
+    {
+      method:"POST",
+    },
+  );
+}
+
+
+
+export type AdminNotificationProvider = {
+
+  id:string;
+
+  name:string;
+
+  channel:string;
+
+  provider:string;
+
+  enabled:boolean;
+
+  isDefault:boolean;
+
+  priority:number;
+
+  config:unknown;
+
+  createdAt:string;
+
+  updatedAt:string;
+
+};
+
+
+
+export function getAdminNotificationProvidersApi(){
+
+ return api<{
+  providers:AdminNotificationProvider[];
+ }>(
+  "/api/v1/admin/notification-providers",
+ );
+
+}
+
+
+
+export function createAdminNotificationProviderApi(
+ input:Omit<
+  AdminNotificationProvider,
+  "id"|"createdAt"|"updatedAt"
+ >
+){
+
+ return api<{
+  provider:AdminNotificationProvider;
+ }>(
+  "/api/v1/admin/notification-providers",
+  {
+   method:"POST",
+   body:JSON.stringify(input),
+  },
+ );
+
+}
+
+
+
+export function updateAdminNotificationProviderApi(
+ id:string,
+ input:Partial<
+  Omit<
+   AdminNotificationProvider,
+   "id"|"createdAt"|"updatedAt"
+  >
+ >
+){
+
+ return api<{
+  provider:AdminNotificationProvider;
+ }>(
+  `/api/v1/admin/notification-providers/${id}`,
+  {
+   method:"PATCH",
+   body:JSON.stringify(input),
+  },
+ );
+
+}
+
+
+
+export function deleteAdminNotificationProviderApi(
+ id:string,
+){
+
+ return api<{
+  deleted:true;
+ }>(
+  `/api/v1/admin/notification-providers/${id}`,
+  {
+   method:"DELETE",
+  },
+ );
+
+}
+
+
+export function getAdminNotificationProviderStatusApi(
+ id:string,
+){
+
+ return api<{
+
+  connected:boolean;
+
+  balance?:number;
+
+  senders?:string[];
+
+  message?:string;
+
+ }>(
+  `/api/v1/admin/notification-providers/status?id=${id}`,
+ );
+
+}
+
+
+
+export type AdminNotificationEvent = {
+
+ id:string;
+
+ key:string;
+
+ name:string;
+
+ module:string;
+
+ description:string;
+
+ variables:string[];
+
+ enabled:boolean;
+
+ createdAt:string;
+
+ updatedAt:string;
+
+};
+
+
+
+export function getAdminNotificationEventsApi(){
+
+ return api<{
+  events:AdminNotificationEvent[];
+ }>(
+  "/api/v1/admin/notification-events",
+ );
+
+}
+
+
+
+
+
+export function createAdminNotificationEventApi(
+ input:{
+  key:string;
+  name:string;
+  module:string;
+  enabled?:boolean;
+ }
+){
+
+ return api<{
+  event:AdminNotificationEvent;
+ }>(
+  "/api/v1/admin/notification-events",
+  {
+   method:"POST",
+   body:JSON.stringify(input),
+  },
+ );
+
+}
+
+
+
+
+
+export function deleteAdminNotificationEventApi(
+ id:string,
+){
+
+ return api<{
+  deleted:true;
+ }>(
+  `/api/v1/admin/notification-events/${id}`,
+  {
+   method:"DELETE",
+  },
+ );
+
+}
+
+
+export type AdminNotificationTemplate = {
+
+  id:string;
+
+  eventKey:string;
+
+  channel:string;
+
+  title:string | null;
+
+  body:string;
+
+  variables:unknown;
+
+  enabled:boolean;
+
+  createdAt:string;
+
+  updatedAt:string;
+
+};
+
+
+
+export function getAdminNotificationTemplatesApi(){
+
+ return api<{
+  templates:AdminNotificationTemplate[];
+ }>(
+  "/api/v1/admin/notification-templates",
+ );
+
+}
+
+
+
+export function createAdminNotificationTemplateApi(
+ input:Omit<
+  AdminNotificationTemplate,
+  "id"|"createdAt"|"updatedAt"
+ >
+){
+
+ return api<{
+  template:AdminNotificationTemplate;
+ }>(
+  "/api/v1/admin/notification-templates",
+  {
+   method:"POST",
+   body:JSON.stringify(input),
+  },
+ );
+
+}
+
+
+
+
+export function updateAdminNotificationTemplateApi(
+ id:string,
+ input:Partial<
+  Omit<
+   AdminNotificationTemplate,
+   "id"|"createdAt"|"updatedAt"
+  >
+ >
+){
+
+ return api<{
+  template:AdminNotificationTemplate;
+ }>(
+  `/api/v1/admin/notification-templates/${id}`,
+  {
+   method:"PATCH",
+   body:JSON.stringify(input),
+  },
+ );
+
+}
+
+
+
+
+export function deleteAdminNotificationTemplateApi(
+ id:string,
+){
+
+ return api<{
+  deleted:true;
+ }>(
+  `/api/v1/admin/notification-templates/${id}`,
+  {
+   method:"DELETE",
+  },
+ );
+
+}
+
+
+
+export type AdminNotificationLog = {
+
+ id:string;
+
+ eventKey:string;
+
+ channel:string;
+
+ receiver:string;
+
+ message:string;
+
+ status:string;
+
+ providerId:string|null;
+
+ createdAt:string;
+
+};
+
+
+
+export function getAdminNotificationLogsApi(){
+
+ return api<{
+  logs:AdminNotificationLog[];
+ }>(
+  "/api/v1/admin/notification-logs",
+ );
+
+}
+
+
+
+export type AdminNotificationRule = {
+
+ id:string;
+
+ name:string;
+
+ eventKey:string;
+
+ channel:string;
+
+ enabled:boolean;
+
+ delayDays:number;
+
+ conditions:unknown;
+
+ createdAt:string;
+
+ updatedAt:string;
+
+};
+
+
+
+export type AdminBlogPost = {
+  id: string;
+  version: number;
+  slug: string;
+  title: string;
+  excerpt: string;
+  contentMarkdown: string;
+  contentJson: unknown | null;
+  contentHtml: string | null;
+  contentText: string | null;
+  coverImageUrl: string | null;
+  coverImageAlt: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  canonicalUrl: string | null;
+  ctaTitle: string | null;
+  ctaDescription: string | null;
+  ctaLabel: string | null;
+  ctaHref: string | null;
+  status: "DRAFT" | "IN_REVIEW" | "PUBLISHED" | "ARCHIVED";
+  origin: "MANUAL" | "AI_ASSISTED" | "IMPORTED";
+  publishedAt: string | null;
+  scheduled: boolean;
+  category: { id: string; slug: string; name: string } | null;
+  tags: Array<{ id: string; slug: string; name: string }>;
+  createdAt: string;
+  updatedAt: string;
+  author: { id: string; name: string | null; phone: string };
+  reviewer: { id: string; name: string | null; phone: string } | null;
+  sources: Array<{
+    id: string;
+    url: string;
+    title: string | null;
+    publisher: string | null;
+    licenseNote: string | null;
+  }>;
+  _count: { revisions: number };
+};
+
+export type AdminBlogPostInput = {
+  slug: string;
+  title: string;
+  excerpt: string;
+  contentJson: unknown;
+  contentHtml: string;
+  contentText: string;
+  coverImageUrl: string;
+  coverImageAlt: string;
+  seoTitle: string;
+  seoDescription: string;
+  canonicalUrl: string;
+  ctaTitle: string;
+  ctaDescription: string;
+  ctaLabel: string;
+  ctaHref: string;
+  categoryId: string;
+  tagIds: string[];
+  sources: Array<{ url: string }>;
+};
+
+export type BlogTaxonomyItem = {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+  _count: { posts: number };
+};
+
+export type BlogMediaItem = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  byteSize: number;
+  altText: string | null;
+  isDecorative: boolean;
+  caption: string | null;
+  width: number | null;
+  height: number | null;
+  focalX: number;
+  focalY: number;
+  url: string;
+  createdAt: string;
+};
+
+export type BlogMediaDetails = BlogMediaItem & {
+  usage: {
+    posts: number;
+    revisions: number;
+    seoPages: number;
+  };
+};
+
+export type AdminSeoPage = {
+  path: string;
+  label: string;
+  title: string;
+  description: string;
+  canonicalUrl: string;
+  ogImageUrl: string;
+  ogImageAlt: string;
+  noIndex: boolean;
+  overridden: boolean;
+  updatedAt: string | null;
+};
+
+export type AdminSeoSettings = {
+  pages: AdminSeoPage[];
+  environment: {
+    publicSiteUrl: string;
+    searchConsoleVerificationConfigured: boolean;
+  };
+};
+
+export type AdminFaqItem = {
+  id: string;
+  question: string;
+  answer: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+export type AdminFaqPage = {
+  path: string;
+  label: string;
+  version: number;
+  items: AdminFaqItem[];
+};
+
+export type AdminFaqSettings = {
+  pages: AdminFaqPage[];
+};
+
+
+export function getAdminNotificationRulesApi(){
+
+ return api<{
+  rules:AdminNotificationRule[];
+ }>(
+  "/api/v1/admin/notification-rules",
+ );
+
+}
+
+
+
+export function createAdminNotificationRuleApi(
+ input:{
+  name:string;
+  eventKey:string;
+  channel:string;
+  enabled?:boolean;
+  delayDays?:number;
+  conditions?:unknown;
+ },
+){
+
+ return api<{
+  rule:AdminNotificationRule;
+ }>(
+  "/api/v1/admin/notification-rules",
+  {
+   method:"POST",
+   body:JSON.stringify(input),
+  },
+ );
+
+}
+
+
+
+export function updateAdminNotificationRuleApi(
+ id:string,
+ input:Partial<{
+  name:string;
+  channel:string;
+  enabled:boolean;
+  delayDays:number;
+  conditions:unknown;
+ }>,
+){
+
+ return api<{
+  rule:AdminNotificationRule;
+ }>(
+  `/api/v1/admin/notification-rules/${id}`,
+  {
+   method:"PATCH",
+   body:JSON.stringify(input),
+  },
+ );
+
+}
+
+
+
+export function deleteAdminNotificationRuleApi(
+ id:string,
+){
+
+ return api<{
+  deleted:true;
+ }>(
+  `/api/v1/admin/notification-rules/${id}`,
+  {
+   method:"DELETE",
+  },
+ );
+
+}
+
+export function testAdminNotificationProviderApi(
+ input:{
+  provider:string;
+  config:unknown;
+  receiver:string;
+  message:string;
+ }
+){
+
+ return api<{
+  success:boolean;
+  message:string;
+ }>(
+  "/api/v1/admin/notification-providers/test",
+  {
+   method:"POST",
+   body:JSON.stringify(input),
+  },
+ );
+
+}

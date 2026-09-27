@@ -1,0 +1,192 @@
+@import "../styles/fonts.css";
+@import "../styles/binix-tokens.css";
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  direction: rtl;
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-vazir);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+[data-display-title="true"] {
+  font-family: var(--font-morabba);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+/* =========================================================
+   Legacy Binix marketing compatibility layer
+   Keeps previous landing/service components working while
+   the new semantic design system remains the source of truth.
+========================================================= */
+
+.font-morabba {
+  font-family: var(--font-morabba);
+}
+
+.marketing-dark {
+  color: #f5f8ff;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(0, 140, 255, 0.13), transparent 34%),
+    radial-gradient(circle at 90% 10%, rgba(47, 183, 255, 0.07), transparent 32%),
+    radial-gradient(circle at 50% 100%, rgba(0, 87, 217, 0.08), transparent 42%),
+    #040812;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(0, 140, 255, 0.10);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+}
+
+.glass-card {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  border: 1px solid rgba(0, 140, 255, 0.12);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  box-shadow:
+    0 25px 60px rgba(0, 0, 0, 0.4),
+    inset 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.glow {
+  box-shadow:
+    0 0 25px rgba(0, 140, 255, 0.18),
+    0 0 80px rgba(0, 140, 255, 0.08);
+}
+
+.glow-purple {
+  box-shadow: 0 0 35px rgba(0, 140, 255, 0.16);
+}
+
+.gradient-border {
+  position: relative;
+  border-radius: inherit;
+}
+
+.gradient-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(130deg, #0055ee, #00c2ff);
+  background-size: 300% 300%;
+  animation: gradientMove 8s linear infinite;
+}
+
+.gradient-text {
+  background: linear-gradient(120deg, #60cfff, #0088ff, #8060ff);
+  background-size: 300% 300%;
+  animation: gradientFlow 8s ease infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.float {
+  animation: floating 5s ease-in-out infinite;
+}
+
+.pulse-soft {
+  animation: pulseSoft 2.8s infinite;
+}
+
+.shine {
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes floating {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pulseSoft {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+}
+
+@keyframes gradientMove {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes gradientFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes aurora {
+  0% {
+    transform: translate(-10%, -10%) rotate(0deg);
+  }
+
+  50% {
+    transform: translate(8%, -5%) rotate(8deg);
+  }
+
+  100% {
+    transform: translate(-8%, 8%) rotate(-8deg);
+  }
+}
